@@ -273,7 +273,14 @@ def format_records_for_ai1(records: dict):
     return "\n".join(formatted)
 
 
-def get_rag_chatbot_response(records: dict, query: str, history: List[dict] = None, bot_type: str = "productivity") -> dict:
+def get_rag_chatbot_response(
+    records: dict,
+    query: str,
+    history: List[dict] = None,
+    bot_type: str = "productivity",
+    custom_name: str = None,
+    custom_persona: str = None
+) -> dict:
     """
     Uses Groq (Llama 3.3) to answer questions based on provided records and conversation history.
     """
@@ -283,6 +290,10 @@ def get_rag_chatbot_response(records: dict, query: str, history: List[dict] = No
 
     records_context = format_records_for_ai1(records)
     
+    # Build the display name and persona for system instruction
+    bot_display_name = custom_name or "Productix AI"
+    bot_persona_suffix = f"Your name is '{bot_display_name}'. {custom_persona}" if custom_persona else f"Your name is '{bot_display_name}'."
+
     # Role-oriented system instructions
     instructions = {
         "productivity": (
@@ -312,6 +323,8 @@ def get_rag_chatbot_response(records: dict, query: str, history: List[dict] = No
     }
 
     system_instruction = instructions.get(bot_type, instructions["productivity"])
+    # Inject custom persona at the end of the system instruction
+    system_instruction = f"{bot_persona_suffix} " + system_instruction
     
     rag_context = f"Context Data (ONLY use this for factual answers):\n{records_context}"
     messages = []

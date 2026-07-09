@@ -121,7 +121,8 @@ async def enforce_client_licensing(request, call_next):
             "/redoc",
             "/auth/register",
             "/auth/login",
-            "/login/login"
+            "/login/login",
+            "/users/update-credentials"
         ]
         
         # Check if the requested path is unprotected
@@ -285,6 +286,10 @@ app.include_router(client_license_router.router)
 
 app.include_router(alerts.router)
 app.include_router(data_records.router)
+
+from .router import custom_chatbot
+app.include_router(custom_chatbot.router)
+
 
 # ── KPI Layer ─────────────────────────────────────────────────────────────────
 from .router import kpi as kpi_router

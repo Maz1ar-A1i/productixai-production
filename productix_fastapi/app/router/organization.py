@@ -220,3 +220,105 @@ def delete_org(
     db.delete(org)
     db.commit()
     return {"detail": "Organization deleted"}
+
+
+# ================================================
+# CHATBOT SETTINGS (Task 8)
+# ================================================
+
+from pydantic import BaseModel
+from typing import Optional, List
+
+class ChatbotSettingsPayload(BaseModel):
+    chatbot_name: Optional[str] = None
+    chatbot_persona: Optional[str] = None
+
+
+@router.get("/me/chatbot-settings")
+def get_chatbot_settings(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """Get organization's chatbot name and persona (all authenticated users)."""
+    org = db.query(models.Organization).filter(models.Organization.id == current_user.organization_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return {
+        "chatbot_name": org.chatbot_name or "Productix AI",
+        "chatbot_persona": org.chatbot_persona or "a helpful AI assistant specialized in operational productivity analysis"
+    }
+
+
+@router.post("/me/chatbot-settings")
+def update_chatbot_settings(
+    payload: ChatbotSettingsPayload,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.require_role("org_admin"))
+):
+    """Update chatbot name and persona (org_admin only)."""
+    org = db.query(models.Organization).filter(models.Organization.id == current_user.organization_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if payload.chatbot_name is not None:
+        name = payload.chatbot_name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Chatbot name cannot be empty")
+        org.chatbot_name = name
+    if payload.chatbot_persona is not None:
+        org.chatbot_persona = payload.chatbot_persona.strip() or "a helpful AI assistant"
+    db.commit()
+    db.refresh(org)
+    return {
+        "chatbot_name": org.chatbot_name,
+        "chatbot_persona": org.chatbot_persona
+    }
+
+
+# ================================================
+# ANALYSIS GOALS (Task 7)
+# ================================================
+
+class AnalysisGoalsPayload(BaseModel):
+    goals: List[str]
+
+
+@router.get("/me/analysis-goals")
+def get_analysis_goals(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    """Get admin-defined analysis goals for this organization."""
+    org = db.query(models.Organization).filter(models.Organization.id == current_user.organization_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    goals = org.analysis_goals
+    # Handle JSON-stored-as-string (SQLite may return string)
+    if isinstance(goals, str):
+        import json
+        try:
+            goals = json.loads(goals)
+        except Exception:
+            goals = []
+    return {"goals": goals or []}
+
+
+@router.post("/me/analysis-goals")
+def update_analysis_goals(
+    payload: AnalysisGoalsPayload,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.require_role("org_admin"))
+):
+    """Update admin-defined analysis goals (org_admin only). Max 8 goals."""
+    goals = [g.strip() for g in payload.goals if g.strip()]
+    if len(goals) > 8:
+        raise HTTPException(status_code=400, detail="Maximum 8 goals allowed")
+    org = db.query(models.Organization).filter(models.Organization.id == current_user.organization_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    import json
+    org.analysis_goals = json.dumps(goals)
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(org, "analysis_goals")
+    db.commit()
+    return {"goals": goals}
+

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Target, BookOpen, AlertCircle, CheckCircle, Sparkles, Lightbulb, ChevronRight, TrendingUp } from 'lucide-react';
-import { agentService, productivityService } from '../services/api';
+import { agentService, productivityService, orgSettingsService } from '../services/api';
 import axios from 'axios';
 
 function formatMessage(text) {
@@ -55,10 +55,34 @@ const Agent = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [records, setRecords] = useState([]);
+  const [goalSuggestions, setGoalSuggestions] = useState([
+    'Increase overall productivity by 15% in the next quarter',
+    'Identify and eliminate top 3 productivity bottlenecks',
+    'Optimize workflow to reduce time waste by 20%',
+    'Develop a personalized productivity improvement plan',
+  ]);
 
   useEffect(() => {
     fetchRecords();
+    fetchGoalSuggestions();
   }, []);
+
+  const fetchGoalSuggestions = async () => {
+    try {
+      const res = await api.get('/users/me');
+      if (res.data && res.data.analysis_goals) {
+        let goals = res.data.analysis_goals;
+        if (typeof goals === 'string') {
+          try { goals = JSON.parse(goals); } catch { goals = []; }
+        }
+        if (goals.length > 0) {
+          setGoalSuggestions(goals);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching analysis goals:", err);
+    }
+  };
 
   const fetchRecords = async () => {
     try {
@@ -127,12 +151,7 @@ const Agent = () => {
     }
   };
 
-  const goalSuggestions = [
-    'Increase overall productivity by 15% in the next quarter',
-    'Identify and eliminate top 3 productivity bottlenecks',
-    'Optimize workflow to reduce time waste by 20%',
-    'Develop a personalized productivity improvement plan',
-  ];
+  // Suggestions are now dynamic and stored in state.
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-6">

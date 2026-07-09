@@ -235,8 +235,35 @@ def chatbot_query(payload: Dict[str, Any], db: Session = Depends(get_db), curren
             "data_records": [serialize_model(r) for r in filtered_records],
         }
 
-        # Call RAG logic with history and bot type
-        rag_result = core_rag_response(context_data, query, history=history, bot_type=bot_type)
+        # Check if bot_type is a custom chatbot ID (integer)
+        custom_bot_name = "Productix AI"
+        custom_bot_persona = ""
+        
+        is_custom_bot = False
+        try:
+            bot_id_int = int(bot_type)
+            is_custom_bot = True
+        except (ValueError, TypeError):
+            is_custom_bot = False
+
+        if is_custom_bot:
+            custom_bot = db.query(models.CustomChatbot).filter(
+                models.CustomChatbot.id == bot_id_int,
+                models.CustomChatbot.organization_id == org_id
+            ).first()
+            if custom_bot:
+                custom_bot_name = custom_bot.name
+                custom_bot_persona = custom_bot.description
+                bot_type = "productivity" # Use default productivity data engine
+        else:
+            # Fallback to user settings
+            custom_bot_name = getattr(current_user, "chatbot_name", "Productix AI") or "Productix AI"
+            custom_bot_persona = getattr(current_user, "chatbot_persona", "") or ""
+        
+        rag_result = core_rag_response(
+            context_data, query, history=history, bot_type=bot_type,
+            custom_name=custom_bot_name, custom_persona=custom_bot_persona
+        )
         
         if "error" in rag_result:
              return {"query": query, "response": f"AI Error: {rag_result['error']}"}

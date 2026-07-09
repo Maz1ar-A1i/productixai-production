@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MessageCircle, Send, Bot, User, Sparkles, Lightbulb, ChevronRight, Zap, Users, Cpu, Activity, Globe } from 'lucide-react';
-import { chatbotService, productivityService, productService, dataRecordService } from '../services/api';
+import { chatbotService, productivityService, productService, dataRecordService, orgSettingsService, customChatbotService } from '../services/api';
 
 const botConfigs = {
   productivity: {
@@ -100,16 +100,47 @@ const colorClasses = {
 const Chatbot = () => {
   const { botType = 'productivity' } = useParams();
   const navigate = useNavigate();
-  const config = botConfigs[botType] || botConfigs.productivity;
+  const [customBots, setCustomBots] = useState([]);
+  
+  // Find currently active bot (custom or fallback default)
+  const activeCustomBot = customBots.find(b => String(b.id) === String(botType));
+  const config = activeCustomBot ? {
+    title: activeCustomBot.name,
+    description: activeCustomBot.description || "Custom AI Assistant designed for operational data analysis.",
+    icon: MessageCircle,
+    color: 'purple',
+    gradient: 'from-purple-500 to-pink-500',
+    welcomeMessage: `Welcome! I'm ${activeCustomBot.name} — ${activeCustomBot.description || 'your custom AI assistant'}. How can I assist you with your operations today?`,
+    quickQuestions: (() => {
+      let goals = [];
+      if (activeCustomBot.goals) {
+        if (typeof activeCustomBot.goals === 'string') {
+          try { goals = JSON.parse(activeCustomBot.goals); } catch { goals = []; }
+        } else {
+          goals = activeCustomBot.goals;
+        }
+      }
+      return goals.length > 0 ? goals : [
+        'Which Unit has the highest capacity utilization?',
+        'Show me worst performing units based on opex.',
+      ];
+    })()
+  } : (botConfigs[botType] || botConfigs.productivity);
+
   const colors = colorClasses[config.color] || colorClasses.purple;
 
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      type: 'bot',
-      content: config.welcomeMessage
-    }
-  ]);
+  const [messages, setMessages] = useState([]);
+  
+  // Initialize messages on boot or configuration change
+  useEffect(() => {
+    setMessages([
+      {
+        id: Date.now(),
+        type: 'bot',
+        content: config.welcomeMessage
+      }
+    ]);
+  }, [botType, config.welcomeMessage]);
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState([]);
@@ -125,23 +156,35 @@ const Chatbot = () => {
   const [recencyLimit, setRecencyLimit] = useState('');
   const [filteredCount, setFilteredCount] = useState(0);
 
+  const [customBotName, setCustomBotName] = useState("");
+  const [customBotPersona, setCustomBotPersona] = useState("");
+
   const messagesEndRef = useRef(null);
 
-  // Reset messages when bot type changes
-  useEffect(() => {
-    setMessages([
-      {
-        id: Date.now(),
-        type: 'bot',
-        content: config.welcomeMessage
-      }
-    ]);
-  }, [botType, config.welcomeMessage]);
+  // Removed legacy welcome message hook since it is now managed directly by the config hook above
 
   useEffect(() => {
     fetchTowers();
     fetchRegions();
+    fetchUserCustomBots();
   }, []);
+
+  const fetchUserCustomBots = async () => {
+    try {
+      const res = await customChatbotService.myBots();
+      const bots = res.data || [];
+      setCustomBots(bots);
+      
+      // Auto-redirect to first custom bot if route is generic and custom bots exist
+      if (bots.length > 0 && !bots.some(b => String(b.id) === String(botType))) {
+        navigate(`/chatbot/${bots[0].id}`, { replace: true });
+      }
+    } catch (e) {
+      console.error("Failed to load user custom chatbots:", e);
+    }
+  };
+
+  // Legacy Organization-level chatbot loader removed
 
   useEffect(() => {
     updateFilteredCount();
@@ -308,25 +351,44 @@ const Chatbot = () => {
           <div>
             <h1 className="text-4xl font-bold text-white mb-2 bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent flex items-center gap-3">
               <Icon className={`w-10 h-10 ${colors.text}`} />
-              {config.title}
+              {botType === 'productivity' && customBotName ? customBotName : config.title}
             </h1>
-            <p className="text-white/40 text-sm">{config.description}</p>
+            <p className="text-white/40 text-sm">
+              {botType === 'productivity' && customBotPersona ? customBotPersona : config.description}
+            </p>
           </div>
 
           {/* Bot Selector */}
-          <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 gap-1">
-            {Object.keys(botConfigs).map((key) => (
-              <button
-                key={key}
-                onClick={() => navigate(`/chatbot/${key}`)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${botType === key
-                    ? `bg-gradient-to-r ${botConfigs[key].gradient} text-white shadow-lg`
-                    : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+          <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 gap-1 overflow-x-auto max-w-full">
+            {customBots.length > 0 ? (
+              customBots.map((bot) => (
+                <button
+                  key={bot.id}
+                  onClick={() => navigate(`/chatbot/${bot.id}`)}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all duration-300 ${
+                    String(botType) === String(bot.id)
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                      : 'text-white/40 hover:text-white/70 hover:bg-white/5'
                   }`}
-              >
-                {key.charAt(0).toUpperCase() + key.slice(1)}
-              </button>
-            ))}
+                >
+                  {bot.name}
+                </button>
+              ))
+            ) : (
+              Object.keys(botConfigs).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => navigate(`/chatbot/${key}`)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
+                    botType === key
+                      ? `bg-gradient-to-r ${botConfigs[key].gradient} text-white shadow-lg`
+                      : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                  }`}
+                >
+                  {key.charAt(0).toUpperCase() + key.slice(1)}
+                </button>
+              ))
+            )}
           </div>
         </div>
 

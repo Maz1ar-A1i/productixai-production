@@ -65,19 +65,49 @@ def get_local_status(
                     valid = False
                     reason = "SYSTEM_SUSPENDED"
                 else:
-                    # Check organization's license matching the cached key
-                    lic = db.query(License).filter(
-                        License.organization_id == decoded.organization_id,
-                        License.license_key == cached_key,
-                        License.status == "active"
-                    ).first()
-                    
-                    from datetime import datetime
-                    if lic and lic.expires_at and lic.expires_at < datetime.utcnow():
-                        lic.status = "expired"
-                        db.commit()
-                        lic = None
+                    # Determine the license key to check (cache key first, fallback to DB key)
+                    key_to_check = cached_key
+                    if not key_to_check:
+                        db_lic = db.query(License).filter(
+                            License.organization_id == decoded.organization_id
+                        ).order_by(License.id.desc()).first()
+                        if db_lic:
+                            key_to_check = db_lic.license_key
+
+                    # Check organization's license matching the key
+                    lic = None
+                    if key_to_check:
+                        lic = db.query(License).filter(
+                            License.organization_id == decoded.organization_id,
+                            License.license_key == key_to_check,
+                            License.status == "active"
+                        ).first()
                         
+                        from datetime import datetime
+                        if lic and lic.expires_at and lic.expires_at < datetime.utcnow():
+                            lic.status = "expired"
+                            db.commit()
+                            lic = None
+
+                        # If not active in DB, or cache doesn't exist, or cache is not active:
+                        # trigger online verification to see if it was re-activated!
+                        from ..client_license_manager import read_encrypted_cache
+                        cache_data = read_encrypted_cache()
+                        if not lic or not cache_data or cache_data.get("cached_status") != "active":
+                            from ..client_license_manager import check_license_status
+                            check_license_status(key_to_check)
+                            
+                            # Query again after checking
+                            lic = db.query(License).filter(
+                                License.organization_id == decoded.organization_id,
+                                License.license_key == key_to_check,
+                                License.status == "active"
+                            ).first()
+                            
+                            # Reload cache key
+                            cache_data = read_encrypted_cache()
+                            cached_key = cache_data.get("license_key") if cache_data else None
+
                     if lic:
                         valid = True
                         reason = "ACTIVE"
@@ -89,25 +119,16 @@ def get_local_status(
                         else:
                             hours_left = 99999.0
                     else:
-                        # Check if org has any active license key (but different from cache)
-                        any_active = db.query(License).filter(
-                            License.organization_id == decoded.organization_id,
-                            License.status == "active"
-                        ).first()
-                        
-                        if any_active:
-                            reason = "UNLICENSED"
+                        # Check if any expired/revoked license exists to get the reason
+                        any_lic = db.query(License).filter(
+                            License.organization_id == decoded.organization_id
+                        ).order_by(License.id.desc()).first()
+                        if any_lic:
+                            reason = any_lic.status.upper() # REVOKED or EXPIRED
+                            license_key = any_lic.license_key
+                            expires_at = any_lic.expires_at.isoformat() if any_lic.expires_at else None
                         else:
-                            # Check if any expired/revoked license exists to get the reason
-                            any_lic = db.query(License).filter(
-                                License.organization_id == decoded.organization_id
-                            ).order_by(License.id.desc()).first()
-                            if any_lic:
-                                reason = any_lic.status.upper() # REVOKED or EXPIRED
-                                license_key = any_lic.license_key
-                                expires_at = any_lic.expires_at.isoformat() if any_lic.expires_at else None
-                            else:
-                                reason = "UNLICENSED"
+                            reason = "UNLICENSED"
 
     return LocalStatusResponse(
         valid=valid,
@@ -141,57 +162,129 @@ def register_local_license(
     if decoded.role == "system_admin":
         raise HTTPException(status_code=400, detail="System admin does not need to register a license.")
 
-    from ..models import License
+    import requests
+    from ..client_license_manager import get_central_server_url, verify_server_signature, write_encrypted_cache
+    import app.client_license_manager as clm
     from datetime import datetime
-    
-    # Check if the license key exists and belongs to the user's organization
-    lic = db.query(License).filter(
-        License.license_key == request.licenseKey.strip()
-    ).first()
-    
-    if not lic:
-        raise HTTPException(status_code=400, detail="Invalid license key. Please check the key provided by global admin.")
-        
-    if lic.organization_id != decoded.organization_id:
-        raise HTTPException(status_code=400, detail="This license key does not belong to your organization.")
-        
-    if lic.status == "revoked":
-        raise HTTPException(status_code=400, detail="This license key has been revoked.")
-        
-    if lic.expires_at and lic.expires_at < datetime.utcnow():
-        lic.status = "expired"
-        db.commit()
-        raise HTTPException(status_code=400, detail="This license key has expired.")
 
-    # Mark the key as active if it was pending or change status to active
-    lic.status = "active"
-    db.commit()
+    server_url = get_central_server_url()
+    machine_id = get_machine_id()
+    license_key = request.licenseKey.strip()
+
+    validate_endpoint = f"{server_url}/api/validate.php"
+    payload = {
+        "licenseKey": license_key,
+        "machineId": machine_id
+    }
+
+    try:
+        response = requests.post(validate_endpoint, json=payload, timeout=8)
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"License validation server returned status code {response.status_code}."
+            )
+        res_data = response.json()
+    except requests.RequestException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Central licensing server is unreachable. Please verify your internet connection."
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error communicating with licensing server: {str(e)}"
+        )
+
+    server_sig = res_data.get("signature")
+    if not server_sig or not verify_server_signature(res_data, server_sig):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cryptographic response verification failed. Response signature was invalid."
+        )
+
+    valid = res_data.get("valid", False)
+    reason = res_data.get("reason", "REVOKED")
+    expires_at_str = res_data.get("expiresAt")
+
+    if not valid:
+        # Update local DB if the license already exists in DB
+        from ..models import License
+        lic = db.query(License).filter(License.license_key == license_key).first()
+        if lic:
+            lic.status = reason.lower()
+            db.commit()
+        
+        with clm.state_lock:
+            clm.IS_LICENSED = False
+            clm.LICENSE_BLOCK_REASON = reason
+            clm.LICENSE_KEY = license_key
+            clm.EXPIRES_AT = expires_at_str
+
+        return LocalStatusResponse(
+            valid=False,
+            reason=reason,
+            licenseKey=license_key,
+            expiresAt=expires_at_str,
+            hoursLeft=0.0,
+            machineId=machine_id
+        )
+
+    # If valid, sync to local DB:
+    from ..models import License
+    lic = db.query(License).filter(License.license_key == license_key).first()
     
-    # Update local cache so we remain consistent
-    from ..client_license_manager import write_encrypted_cache
+    parsed_expires_at = None
+    if expires_at_str:
+        try:
+            parsed_expires_at = datetime.fromisoformat(expires_at_str)
+        except ValueError:
+            parsed_expires_at = datetime.fromisoformat(expires_at_str.replace(' ', 'T'))
+
+    if lic:
+        lic.organization_id = decoded.organization_id
+        lic.status = "active"
+        lic.expires_at = parsed_expires_at
+        lic.bound_machine_id = machine_id
+        if not lic.first_used_at:
+            lic.first_used_at = datetime.utcnow()
+        db.commit()
+    else:
+        lic = License(
+            license_key=license_key,
+            organization_id=decoded.organization_id,
+            role="org_admin",
+            status="active",
+            expires_at=parsed_expires_at,
+            bound_machine_id=machine_id,
+            first_used_at=datetime.utcnow()
+        )
+        db.add(lic)
+        db.commit()
+
+    # Update cache
     new_cache = {
-        "license_key": lic.license_key,
+        "license_key": license_key,
         "last_validated": datetime.utcnow().isoformat(),
         "max_seen_time": datetime.utcnow().isoformat(),
-        "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
+        "expires_at": expires_at_str,
         "cached_status": "active"
     }
     write_encrypted_cache(new_cache)
-    
-    # Update the global thread-safe state in client_license_manager
-    import app.client_license_manager as clm
+
+    # Update memory state
     with clm.state_lock:
         clm.IS_LICENSED = True
         clm.LICENSE_BLOCK_REASON = "ACTIVE"
-        clm.LICENSE_KEY = lic.license_key
-        clm.EXPIRES_AT = lic.expires_at.isoformat() if lic.expires_at else None
-        clm.HOURS_LEFT = 99999.0
+        clm.LICENSE_KEY = license_key
+        clm.EXPIRES_AT = expires_at_str
+        clm.HOURS_LEFT = 24.0
 
     return LocalStatusResponse(
         valid=True,
         reason="ACTIVE",
-        licenseKey=lic.license_key,
-        expiresAt=lic.expires_at.isoformat() if lic.expires_at else None,
-        hoursLeft=99999.0,
-        machineId=get_machine_id()
+        licenseKey=license_key,
+        expiresAt=expires_at_str,
+        hoursLeft=24.0,
+        machineId=machine_id
     )

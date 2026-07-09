@@ -4,9 +4,9 @@
 
 // 1. Database Connection Credentials
 define('DB_HOST', 'localhost');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_NAME', 'productix_licensing');
+define('DB_USER', 'hubtecho_license');
+define('DB_PASS', 'thvNAgEcCGsFE8t%');
+define('DB_NAME', 'hubtecho_license');
 
 // 2. Security Configuration
 // Shared HMAC signing key - MUST match the LICENSE_SIGNING_KEY in your Python client app
@@ -28,6 +28,24 @@ function get_db_connection() {
                 PDO::ATTR_EMULATE_PREPARES   => false,
             ];
             $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+
+            // Auto-migrate database tables for password change tracking
+            try {
+                // Check if org_admins has requires_password_change
+                $stmt = $pdo->query("SHOW COLUMNS FROM `org_admins` LIKE 'requires_password_change'");
+                if (!$stmt->fetch()) {
+                    $pdo->exec("ALTER TABLE `org_admins` ADD COLUMN `requires_password_change` TINYINT(1) NOT NULL DEFAULT 1");
+                }
+                
+                // Check if org_users has requires_password_change
+                $stmt = $pdo->query("SHOW COLUMNS FROM `org_users` LIKE 'requires_password_change'");
+                if (!$stmt->fetch()) {
+                    $pdo->exec("ALTER TABLE `org_users` ADD COLUMN `requires_password_change` TINYINT(1) NOT NULL DEFAULT 1");
+                }
+            } catch (Exception $e) {
+                // Fail gracefully so connection is not blocked
+                error_log("Licensing DB Auto-migration failed: " . $e->getMessage());
+            }
         } catch (PDOException $e) {
             // Send clear error response
             header('Content-Type: application/json');

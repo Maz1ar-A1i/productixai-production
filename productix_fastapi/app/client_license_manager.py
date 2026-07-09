@@ -89,7 +89,7 @@ def get_central_server_url() -> str:
     """Return the central license server URL."""
     # Retrieve server URL from environment variables
     # Default to the centralized registry domain
-    return os.getenv("CENTRAL_LICENSE_SERVER_URL", "https://productix.techohub.net")
+    return os.getenv("CENTRAL_LICENSE_SERVER_URL", "https://license.techohub.net")
 
 def verify_server_signature(payload: dict, signature: str) -> bool:
     """
@@ -102,6 +102,58 @@ def verify_server_signature(payload: dict, signature: str) -> bool:
     signing_key = os.getenv("LICENSE_SIGNING_KEY", "PRODUCTIX_SECRET_LICENSE_SIGNING_KEY_2026_DEFAULT")
     expected_sig = hmac.new(signing_key.encode("utf-8"), serialized, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected_sig, signature)
+
+def sync_local_db_status(license_key: str, valid: bool, reason: str, expires_at_str: Optional[str], machine_id: str):
+    """Sync the license status from the central server to the local SQLite database."""
+    try:
+        from .database import SessionLocal
+        from .models import License, Organization
+        
+        db = SessionLocal()
+        try:
+            lic = db.query(License).filter(License.license_key == license_key).first()
+            if lic:
+                lic.status = "active" if valid else reason.lower()
+                if expires_at_str:
+                    try:
+                        lic.expires_at = datetime.fromisoformat(expires_at_str)
+                    except ValueError:
+                        lic.expires_at = datetime.fromisoformat(expires_at_str.replace(' ', 'T'))
+                else:
+                    lic.expires_at = None
+                if valid:
+                    lic.bound_machine_id = machine_id
+                    if not lic.first_used_at:
+                        lic.first_used_at = datetime.utcnow()
+                db.commit()
+            else:
+                # Only insert if the remote server verified it as valid
+                if valid:
+                    org = db.query(Organization).first()
+                    org_id = org.id if org else None
+                    
+                    parsed_expires_at = None
+                    if expires_at_str:
+                        try:
+                            parsed_expires_at = datetime.fromisoformat(expires_at_str)
+                        except ValueError:
+                            parsed_expires_at = datetime.fromisoformat(expires_at_str.replace(' ', 'T'))
+                            
+                    lic = License(
+                        license_key=license_key,
+                        organization_id=org_id,
+                        role="org_admin",
+                        status="active",
+                        expires_at=parsed_expires_at,
+                        bound_machine_id=machine_id,
+                        first_used_at=datetime.utcnow()
+                    )
+                    db.add(lic)
+                    db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[!] Failed to sync remote license status to local DB: {e}")
 
 def check_license_status(provided_key: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -217,7 +269,7 @@ def check_license_status(provided_key: Optional[str] = None) -> Dict[str, Any]:
     else:
         # Remote central server validation via HTTP request
         try:
-            validate_endpoint = f"{server_url}/api/license/validate"
+            validate_endpoint = f"{server_url}/api/validate.php"
             payload = {
                 "licenseKey": license_key,
                 "machineId": machine_id
@@ -239,6 +291,9 @@ def check_license_status(provided_key: Optional[str] = None) -> Dict[str, Any]:
                 reason = res_data.get("reason", "REVOKED")
                 expires_at_str = res_data.get("expiresAt")
                 
+                # Sync response status directly to local SQLite DB
+                sync_local_db_status(license_key, valid, reason, expires_at_str, machine_id)
+                
                 if valid:
                     new_cache = {
                         "license_key": license_key,
@@ -256,6 +311,15 @@ def check_license_status(provided_key: Optional[str] = None) -> Dict[str, Any]:
                         HOURS_LEFT = 24.0
                     return {"valid": True, "reason": "ACTIVE", "expiresAt": expires_at_str, "machineId": machine_id}
                 else:
+                    # Keep the cache file so we remember the key, but mark the cached status as revoked/expired
+                    new_cache = {
+                        "license_key": license_key,
+                        "last_validated": current_time.isoformat(),
+                        "max_seen_time": current_time.isoformat(),
+                        "expires_at": expires_at_str,
+                        "cached_status": reason.lower()
+                    }
+                    write_encrypted_cache(new_cache)
                     with state_lock:
                         IS_LICENSED = False
                         LICENSE_BLOCK_REASON = reason
@@ -278,6 +342,7 @@ def check_license_status(provided_key: Optional[str] = None) -> Dict[str, Any]:
         last_validated_str = cache.get("last_validated")
         max_seen_str = cache.get("max_seen_time")
         expires_at_str = cache.get("expires_at")
+        cached_status = cache.get("cached_status", "active")
         
         last_validated = datetime.fromisoformat(last_validated_str)
         max_seen = datetime.fromisoformat(max_seen_str)
@@ -288,6 +353,13 @@ def check_license_status(provided_key: Optional[str] = None) -> Dict[str, Any]:
                 IS_LICENSED = False
                 LICENSE_BLOCK_REASON = "TIME_TAMPERING"
             return {"valid": False, "reason": "TIME_TAMPERING", "machineId": machine_id}
+            
+        # Check cached status (prevent offline grace bypass for revoked keys)
+        if cached_status != "active":
+            with state_lock:
+                IS_LICENSED = False
+                LICENSE_BLOCK_REASON = cached_status.upper()
+            return {"valid": False, "reason": cached_status.upper(), "expiresAt": expires_at_str, "machineId": machine_id}
         
         # Expiry Check
         if expires_at_str:
@@ -314,6 +386,10 @@ def check_license_status(provided_key: Optional[str] = None) -> Dict[str, Any]:
                 LICENSE_KEY = license_key
                 EXPIRES_AT = expires_at_str
                 HOURS_LEFT = remaining_hours
+            
+            # Sync offline grace active state to local DB
+            sync_local_db_status(license_key, True, "ACTIVE", expires_at_str, machine_id)
+            
             return {"valid": True, "reason": "OFFLINE_GRACE", "expiresAt": expires_at_str, "hoursLeft": remaining_hours, "machineId": machine_id}
         else:
             # Offline timeout!
@@ -322,6 +398,10 @@ def check_license_status(provided_key: Optional[str] = None) -> Dict[str, Any]:
                 LICENSE_BLOCK_REASON = "OFFLINE_TIMEOUT"
                 LICENSE_KEY = license_key
                 EXPIRES_AT = expires_at_str
+            
+            # Update local database status to offline_timeout
+            sync_local_db_status(license_key, False, "OFFLINE_TIMEOUT", expires_at_str, machine_id)
+            
             return {"valid": False, "reason": "OFFLINE_TIMEOUT", "expiresAt": expires_at_str, "machineId": machine_id}
             
     except Exception as e:

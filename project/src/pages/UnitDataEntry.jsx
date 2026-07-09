@@ -3,6 +3,153 @@ import { Save, Plus, Trash2, ClipboardPaste, Calendar, CheckCircle2, AlertCircle
 import api, { formulaService, alertService, dataRecordService, productService, authService } from "../services/api";
 import { ValidationResultDisplay } from "../components/AlertNotification";
 
+const excelSerialToDate = (serial) => {
+  const s = parseInt(serial, 10);
+  if (isNaN(s)) return "";
+  const date = new Date(Date.UTC(1899, 11, 30) + s * 24 * 60 * 60 * 1000);
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const normalizeDate = (val) => {
+  if (!val || typeof val !== "string") return "";
+  let cleaned = val.trim().toLowerCase().replace(/^'|'$/g, "").replace(/[\u2013\u2014]/g, "-");
+  if (!cleaned) return "";
+
+  // If it doesn't contain any month word, and contains a space (likely time part), take the first part
+  const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const hasMonthWord = monthNames.some(m => cleaned.includes(m));
+  if (!hasMonthWord && cleaned.includes(" ")) {
+    cleaned = cleaned.split(" ")[0];
+  }
+
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
+    return cleaned;
+  }
+
+  // Check if it's a 5-digit Excel serial date
+  if (/^\d{5}$/.test(cleaned)) {
+    const sVal = parseInt(cleaned, 10);
+    if (sVal >= 40000 && sVal <= 60000) {
+      return excelSerialToDate(cleaned);
+    }
+  }
+
+  // 1. Check for YYYY/MM/DD or YYYY-MM-DD or YYYY.MM.DD
+  let match = cleaned.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+  if (match) {
+    const [_, y, m, d] = match;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // 2. Check for DD/MM/YYYY or MM/DD/YYYY or DD.MM.YYYY
+  match = cleaned.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+  if (match) {
+    let [_, p1, p2, p3] = match;
+    let y = p3;
+    if (y.length === 2) {
+      const currentYear = new Date().getFullYear();
+      const century = Math.floor(currentYear / 100) * 100;
+      y = String(century + parseInt(y, 10));
+    }
+    const num1 = parseInt(p1, 10);
+    const num2 = parseInt(p2, 10);
+    let d, m;
+    if (num1 > 12 && num2 <= 12) {
+      d = String(num1);
+      m = String(num2);
+    } else if (num2 > 12 && num1 <= 12) {
+      d = String(num2);
+      m = String(num1);
+    } else {
+      // Default to DD/MM/YYYY
+      d = String(num1);
+      m = String(num2);
+    }
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // 3. Check for 2-part dates like DD/MM or DD-MM (assumes current year)
+  match = cleaned.match(/^(\d{1,2})[\/\-\.](\d{1,2})$/);
+  if (match) {
+    const [_, p1, p2] = match;
+    const y = String(new Date().getFullYear());
+    const num1 = parseInt(p1, 10);
+    const num2 = parseInt(p2, 10);
+    let d, m;
+    if (num1 > 12 && num2 <= 12) {
+      d = String(num1);
+      m = String(num2);
+    } else if (num2 > 12 && num1 <= 12) {
+      d = String(num2);
+      m = String(num1);
+    } else {
+      // Default to DD/MM
+      d = String(num1);
+      m = String(num2);
+    }
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // 4. Check for word months, e.g. "24-Jun-26", "24 Jun 2026", "Jun 24, 2026", "June 24, 2026"
+  let foundMonthIndex = -1;
+  let foundMonthName = "";
+  for (let idx = 0; idx < monthNames.length; idx++) {
+    if (cleaned.includes(monthNames[idx])) {
+      foundMonthIndex = idx;
+      foundMonthName = monthNames[idx];
+      break;
+    }
+  }
+
+  if (foundMonthIndex !== -1) {
+    const nums = cleaned.replace(foundMonthName, "").match(/\d+/g);
+    if (nums && nums.length >= 1) {
+      let d = "";
+      let y = "";
+      if (nums.length === 1) {
+        // Only 1 number, e.g. "24-Jun" or "Jun-24"
+        d = nums[0];
+        y = String(new Date().getFullYear());
+      } else {
+        // 2 or more numbers
+        if (nums[0].length === 4) {
+          y = nums[0];
+          d = nums[1];
+        } else if (nums[1].length === 4) {
+          y = nums[1];
+          d = nums[0];
+        } else {
+          d = nums[0];
+          y = nums[1];
+          if (y.length === 2) {
+            const currentYear = new Date().getFullYear();
+            const century = Math.floor(currentYear / 100) * 100;
+            y = String(century + parseInt(y, 10));
+          }
+        }
+      }
+      const m = String(foundMonthIndex + 1).padStart(2, '0');
+      return `${y}-${m}-${d.padStart(2, '0')}`;
+    }
+  }
+
+  // Fallback to JS parsing
+  const parsed = Date.parse(val);
+  if (!isNaN(parsed)) {
+    const dObj = new Date(parsed);
+    const y = dObj.getFullYear();
+    const m = String(dObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  return val;
+};
+
 const UnitDataEntry = () => {
   const userRole = authService.getRole();
   const isReadOnly = userRole === "org_admin";
@@ -269,25 +416,56 @@ const UnitDataEntry = () => {
           setUnitRows(finalURows.map(r => runCalculations(r, "unit", formulas, finalURows, uniCols, custCols)));
           setCustomerRows(finalCRows.map(r => runCalculations(r, "customer", formulas, finalURows, uniCols, custCols)));
         } else {
-          // Fallback to empty rows
+          // Check if we have localStorage draft
+          let loadedDraft = false;
+          try {
+            const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
+            const localDraft = allData[id];
+            if (localDraft && (localDraft.unitRows?.length > 0 || localDraft.customerRows?.length > 0)) {
+              setUnitRows(localDraft.unitRows.map(r => runCalculations(r, "unit", formulas, localDraft.unitRows, uniCols, custCols)));
+              setCustomerRows(localDraft.customerRows.map(r => runCalculations(r, "customer", formulas, localDraft.unitRows, uniCols, custCols)));
+              loadedDraft = true;
+            }
+          } catch (e) {
+            console.error("LS draft load failed", e);
+          }
+
+          if (!loadedDraft) {
+            // Fallback to empty rows
+            const ur = [createEmptyRow(uniCols)];
+            const cr = [createEmptyRow(custCols)];
+            setUnitRows(ur.map(r => runCalculations(r, "unit", formulas, ur, uniCols, custCols)));
+            setCustomerRows(cr.map(r => runCalculations(r, "customer", formulas, ur, uniCols, custCols)));
+          }
+        }
+      })
+      .catch(err => {
+        console.error("Failed to load records from DB, trying local draft:", err);
+        let loadedDraft = false;
+        try {
+          const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
+          const localDraft = allData[id];
+          if (localDraft && (localDraft.unitRows?.length > 0 || localDraft.customerRows?.length > 0)) {
+            setUnitRows(localDraft.unitRows.map(r => runCalculations(r, "unit", formulas, localDraft.unitRows, uniCols, custCols)));
+            setCustomerRows(localDraft.customerRows.map(r => runCalculations(r, "customer", formulas, localDraft.unitRows, uniCols, custCols)));
+            loadedDraft = true;
+          }
+        } catch (e) {
+          console.error("LS draft load failed in catch", e);
+        }
+
+        if (!loadedDraft) {
           const ur = [createEmptyRow(uniCols)];
           const cr = [createEmptyRow(custCols)];
           setUnitRows(ur.map(r => runCalculations(r, "unit", formulas, ur, uniCols, custCols)));
           setCustomerRows(cr.map(r => runCalculations(r, "customer", formulas, ur, uniCols, custCols)));
         }
-      })
-      .catch(err => {
-        console.error("Failed to load records from DB, using empty rows:", err);
-        const ur = [createEmptyRow(uniCols)];
-        const cr = [createEmptyRow(custCols)];
-        setUnitRows(ur.map(r => runCalculations(r, "unit", formulas, ur, uniCols, custCols)));
-        setCustomerRows(cr.map(r => runCalculations(r, "customer", formulas, ur, uniCols, custCols)));
       });
     setSelectedDate("");
   };
 
   const createEmptyRow = (cols) => {
-    const row = { id: Date.now() + Math.random() };
+    const row = { id: `empty_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` };
     cols.forEach(c => { 
       row[c.key] = c.key === "Customer" && c.options && c.options.length > 0 ? c.options[0] : ""; 
     });
@@ -339,35 +517,65 @@ const UnitDataEntry = () => {
   const handlePaste = (e, type) => {
     e.preventDefault();
     const pasteData = e.clipboardData.getData("Text");
-    if (!pasteData) return;
+    processPasteData(pasteData, type);
+  };
+
+  const processPasteData = (pasteData, type) => {
+    if (!pasteData || !pasteData.trim()) return;
 
     const cols = type === "unit" ? unitColumns : customerColumns;
-    const lines = pasteData.split("\n").filter(line => line.trim() !== "");
-    
-    const newRows = lines.map(line => {
-      const values = line.split("\t");
-      const row = { id: Date.now() + Math.random() };
+
+    // Normalize line endings: Excel uses \r\n on Windows, Google Sheets uses \n
+    const normalized = pasteData.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const lines = normalized.split("\n").filter(line => line.trim() !== "");
+
+    if (lines.length === 0) return;
+
+    const newRows = lines.map((line, idx) => {
+      // Split by tab, strip surrounding whitespace and stray \r from each cell
+      const values = line.split("\t").map(v => v.trim().replace(/\r/g, ""));
+      const row = { id: `paste_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}` };
       cols.forEach((c, i) => {
-        row[c.key] = values[i] !== undefined ? values[i].trim() : "";
+        let val = values[i] !== undefined ? values[i] : "";
+        if (c.type === "date") {
+          val = normalizeDate(val);
+        }
+        row[c.key] = val;
       });
       return row;
     });
 
     if (type === "unit") {
       setUnitRows(prev => {
-        const filtered = prev.filter(r => cols.some(c => r[c.key] !== ""));
+        // Remove empty placeholder rows (rows where all data columns are empty)
+        const filtered = prev.filter(r =>
+          cols.filter(c => c.key !== "Date").some(c => r[c.key] !== "" && r[c.key] !== undefined)
+        );
         const combined = [...filtered, ...newRows];
         return combined.map(r => runCalculations(r, "unit", formulas, combined, unitColumns, customerColumns));
       });
     } else {
       setCustomerRows(prev => {
-        const filtered = prev.filter(r => cols.some(c => r[c.key] !== ""));
+        const filtered = prev.filter(r =>
+          cols.filter(c => c.key !== "Date" && c.key !== "Customer").some(c => r[c.key] !== "" && r[c.key] !== undefined)
+        );
         const combined = [...filtered, ...newRows];
         return combined.map(r => runCalculations(r, "customer", formulas, unitRows, unitColumns, customerColumns));
       });
     }
-    showMsg("success", `Pasted ${newRows.length} rows into ${type} data`);
+    const firstRowDebug = newRows[0] ? Object.entries(newRows[0]).filter(([k]) => k !== 'id').map(([k, v]) => `${k}: "${v}"`).join(", ") : "none";
+    showMsg("success", `Pasted ${newRows.length} rows. First row values: ${firstRowDebug}`);
   };
+
+  const handlePasteButton = async (type) => {
+    try {
+      const text = await navigator.clipboard.readText();
+      processPasteData(text, type);
+    } catch (err) {
+      showMsg("error", "Could not read clipboard. Try clicking inside the table and pressing Ctrl+V.");
+    }
+  };
+
 
   const saveUnitData = async (forceSave = false) => {
     try {
@@ -673,17 +881,30 @@ const UnitDataEntry = () => {
                   <h2 className="text-lg font-bold text-white">Overall Unit Operations</h2>
                   <div className="flex items-center gap-2 mt-1 text-white/40">
                     <ClipboardPaste size={12} />
-                    <span className="text-xs font-medium">Use <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-white">Ctrl+V</kbd> to paste data here.</span>
+                    <span className="text-xs font-medium">Click inside table and press <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-white">Ctrl+V</kbd> to paste from Excel/Sheets.</span>
                   </div>
                 </div>
                 {!isReadOnly && (
-                  <button onClick={() => addRow("unit")} className="px-4 py-2 rounded-lg bg-teal-500/10 text-teal-500 hover:bg-teal-500 hover:text-black font-bold text-sm flex items-center gap-2 transition-all">
-                    <Plus size={16} /> ADD UNIT ROW
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handlePasteButton("unit")}
+                      className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white font-bold text-sm flex items-center gap-2 transition-all"
+                    >
+                      <ClipboardPaste size={14} /> PASTE DATA
+                    </button>
+                    <button onClick={() => addRow("unit")} className="px-4 py-2 rounded-lg bg-teal-500/10 text-teal-500 hover:bg-teal-500 hover:text-black font-bold text-sm flex items-center gap-2 transition-all">
+                      <Plus size={16} /> ADD ROW
+                    </button>
+                  </div>
                 )}
               </div>
               
-              <div className="flex-1 overflow-auto custom-scrollbar max-h-[50vh]" onPaste={isReadOnly ? undefined : (e) => handlePaste(e, "unit")}>
+              <div
+                className="flex-1 overflow-auto custom-scrollbar max-h-[50vh]"
+                tabIndex={0}
+                onPaste={isReadOnly ? undefined : (e) => handlePaste(e, "unit")}
+                style={{ outline: "none" }}
+              >
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0 bg-[#121212] z-10 shadow-md">
                     <tr>
@@ -712,6 +933,12 @@ const UnitDataEntry = () => {
                                 type={c.type === "date" ? "date" : "text"}
                                 value={row[c.key] || ""}
                                 onChange={e => handleCellChange(rIndex, c.key, e.target.value, "unit")}
+                                onPaste={isReadOnly || isCalc ? undefined : (e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const text = e.clipboardData.getData("text");
+                                  processPasteData(text, "unit");
+                                }}
                                 placeholder={isCalc ? "Auto" : "-"}
                                 readOnly={isCalc || isReadOnly}
                                 className={`w-full p-2 bg-transparent text-sm text-white focus:bg-white/5 focus:outline-none rounded transition-colors ${isCalc ? 'font-bold text-teal-400 cursor-default' : ''}`}
@@ -747,17 +974,30 @@ const UnitDataEntry = () => {
                     <h2 className="text-lg font-bold text-white">Customer Specific Operations</h2>
                     <div className="flex items-center gap-2 mt-1 text-white/40">
                       <ClipboardPaste size={12} />
-                      <span className="text-xs font-medium">Use <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-white">Ctrl+V</kbd> to paste data here.</span>
+                      <span className="text-xs font-medium">Click inside table and press <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-white">Ctrl+V</kbd> to paste from Excel/Sheets.</span>
                     </div>
                   </div>
                   {!isReadOnly && (
-                    <button onClick={() => addRow("customer")} className="px-4 py-2 rounded-lg bg-[#EAB308]/10 text-[#EAB308] hover:bg-[#EAB308] hover:text-black font-bold text-sm flex items-center gap-2 transition-all">
-                      <Plus size={16} /> ADD CUSTOMER ROW
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handlePasteButton("customer")}
+                        className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white font-bold text-sm flex items-center gap-2 transition-all"
+                      >
+                        <ClipboardPaste size={14} /> PASTE DATA
+                      </button>
+                      <button onClick={() => addRow("customer")} className="px-4 py-2 rounded-lg bg-[#EAB308]/10 text-[#EAB308] hover:bg-[#EAB308] hover:text-black font-bold text-sm flex items-center gap-2 transition-all">
+                        <Plus size={16} /> ADD ROW
+                      </button>
+                    </div>
                   )}
                 </div>
                 
-                <div className="flex-1 overflow-auto custom-scrollbar max-h-[50vh]" onPaste={isReadOnly ? undefined : (e) => handlePaste(e, "customer")}>
+                <div
+                  className="flex-1 overflow-auto custom-scrollbar max-h-[50vh]"
+                  tabIndex={0}
+                  onPaste={isReadOnly ? undefined : (e) => handlePaste(e, "customer")}
+                  style={{ outline: "none" }}
+                >
                   <table className="w-full text-left border-collapse">
                     <thead className="sticky top-0 bg-[#121212] z-10 shadow-md">
                       <tr>
@@ -786,6 +1026,12 @@ const UnitDataEntry = () => {
                                     <select 
                                       value={row[c.key] || ""}
                                       onChange={e => handleCellChange(rIndex, c.key, e.target.value, "customer")}
+                                      onPaste={isReadOnly ? undefined : (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const text = e.clipboardData.getData("text");
+                                        processPasteData(text, "customer");
+                                      }}
                                       disabled={isReadOnly}
                                       className="w-full p-2 bg-transparent text-sm text-white focus:bg-white/5 focus:outline-none rounded transition-colors appearance-none"
                                       style={{
@@ -803,6 +1049,12 @@ const UnitDataEntry = () => {
                                       type={c.type === "date" ? "date" : "text"}
                                       value={row[c.key] || ""}
                                       onChange={e => handleCellChange(rIndex, c.key, e.target.value, "customer")}
+                                      onPaste={isReadOnly || isCalc ? undefined : (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const text = e.clipboardData.getData("text");
+                                        processPasteData(text, "customer");
+                                      }}
                                       placeholder={isCalc ? "Auto" : "-"}
                                       readOnly={isCalc || isReadOnly}
                                       className={`w-full p-2 bg-transparent text-sm text-white focus:bg-white/5 focus:outline-none rounded transition-colors ${isCalc ? 'font-bold text-amber-400 cursor-default' : ''}`}

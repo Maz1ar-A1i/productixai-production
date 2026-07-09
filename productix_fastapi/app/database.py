@@ -69,10 +69,12 @@ def auto_migrate_db(engine):
     migrations = {
         "users": [
             ("is_active", "BOOLEAN DEFAULT 1"),
-            ("is_verified", "BOOLEAN DEFAULT 1")
+            ("is_verified", "BOOLEAN DEFAULT 1"),
+            ("requires_password_change", "BOOLEAN DEFAULT 0")
         ],
         "organizations": [
-            ("column_mappings", "JSON NULL")
+            ("column_mappings", "JSON NULL"),
+            ("user_limit", "INTEGER DEFAULT 5")
         ],
         "products": [
             ("sector", "VARCHAR DEFAULT 'Telecom'"),

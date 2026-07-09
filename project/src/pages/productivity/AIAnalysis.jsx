@@ -23,6 +23,7 @@ const AIAnalysisPage = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [timePeriodFilter, setTimePeriodFilter] = useState("all"); // Task 6: time period filter
 
   // Fetch all products
   useEffect(() => {
@@ -42,7 +43,18 @@ const AIAnalysisPage = () => {
           isLS: true
         }));
 
-        setProducts([...res.data, ...mappedLS]);
+        const combined = [...res.data, ...mappedLS];
+        const uniqueProducts = [];
+        const seenNames = new Set();
+        combined.forEach(p => {
+          const lowerName = p.name ? p.name.trim().toLowerCase() : "";
+          if (lowerName && !seenNames.has(lowerName)) {
+            seenNames.add(lowerName);
+            uniqueProducts.push(p);
+          }
+        });
+
+        setProducts(uniqueProducts);
       } catch {
         setError("Failed to load products");
       }
@@ -59,32 +71,43 @@ const AIAnalysisPage = () => {
     }
 
     const fetchRecords = async () => {
-      if (typeof selectedProduct === 'string' && selectedProduct.startsWith('ls_')) {
-        const unitId = selectedProduct.replace('ls_', '');
-        try {
-          const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
-          const unitData = allData[unitId] || { unitRows: [], customerRows: [] };
-          
-          const dates = new Set();
-          unitData.unitRows.forEach(r => r.Date && dates.add(r.Date));
-          unitData.customerRows.forEach(r => r.Date && dates.add(r.Date));
-          
-          const mappedRecords = Array.from(dates).sort((a,b) => new Date(b) - new Date(a)).map(date => ({
-            id: `ls_rec_${date}`,
-            month: date,
-            isLS: true,
-            date: date
-          }));
-          setRecords(mappedRecords);
-        } catch (e) {
-          setError("Failed to load local data records");
-        }
+      const isLSProduct = typeof selectedProduct === 'string' && selectedProduct.startsWith('ls_');
+      const unitId = String(selectedProduct || '').replace('ls_', '');
+
+      // Load local records for this product
+      let localRecords = [];
+      try {
+        const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
+        const unitData = allData[unitId] || { unitRows: [], customerRows: [] };
+        
+        const dates = new Set();
+        unitData.unitRows.forEach(r => r.Date && dates.add(r.Date));
+        unitData.customerRows.forEach(r => r.Date && dates.add(r.Date));
+        
+        localRecords = Array.from(dates).sort((a,b) => new Date(b) - new Date(a)).map(date => ({
+          id: `ls_rec_${date}`,
+          month: date,
+          isLS: true,
+          date: date,
+          unitId: unitId
+        }));
+      } catch (e) {
+        console.error("LS data load failed", e);
+      }
+
+      if (isLSProduct) {
+        setRecords(localRecords);
       } else {
         try {
           const res = await api.get('/data-records/', { params: { product_id: selectedProduct } });
-          setRecords(res.data);
+          const backendRecords = res.data || [];
+          const backendMonths = new Set(backendRecords.map(r => r.month));
+          
+          const uniqueLocal = localRecords.filter(lr => !backendMonths.has(lr.month));
+          setRecords([...backendRecords, ...uniqueLocal]);
         } catch {
           setError("Failed to load data records for this product");
+          setRecords(localRecords);
         }
       }
     };
@@ -106,7 +129,7 @@ const AIAnalysisPage = () => {
       if (typeof selectedRecord === 'string' && selectedRecord.startsWith('ls_rec_')) {
         // ── Handle LocalStorage Analysis ──
         const date = selectedRecord.replace('ls_rec_', '');
-        const unitId = typeof selectedProduct === 'string' ? selectedProduct.replace('ls_', '') : null;
+        const unitId = String(selectedProduct || '').replace('ls_', '');
         const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
         const unitData = allData[unitId] || { unitRows: [], customerRows: [] };
         
@@ -208,6 +231,29 @@ const AIAnalysisPage = () => {
             Get predictive insights and actionable recommendations for your production records
           </p>
         </div>
+        {/* Task 6: Time Period Filter Pills */}
+        <div className="flex items-center gap-2 mb-6 flex-wrap">
+          <span className="text-white/40 text-xs font-bold uppercase">Time Period:</span>
+          {[
+            ["all", "All"],
+            ["daily", "Daily"],
+            ["weekly", "Weekly"],
+            ["monthly", "Monthly"],
+            ["yearly", "Yearly"]
+          ].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => setTimePeriodFilter(val)}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                timePeriodFilter === val
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/20'
+                  : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         {/* Selection Form */}
         <div className="bg-gradient-to-br from-white/5 to-white/[0.02] backdrop-blur-xl rounded-2xl border border-white/10 p-6 mb-6">
@@ -256,9 +302,33 @@ const AIAnalysisPage = () => {
                   <option value="">
                     {!selectedProduct ? "Select a product first..." : "Select Record..."}
                   </option>
-                  {records.map((r) => (
-                    <option key={r.id} value={r.id}>{r.month}</option>
-                  ))}
+                  {(() => {
+                    const filteredRecords = records.filter(r => {
+                      if (timePeriodFilter === "all") return true;
+                      const monthVal = (r.month || "").trim();
+                      if (timePeriodFilter === "daily") {
+                        // Daily format: YYYY-MM-DD or contains day pattern
+                        return /^\d{4}-\d{2}-\d{2}$/.test(monthVal) || monthVal.includes("/") || monthVal.includes("-Day");
+                      }
+                      if (timePeriodFilter === "weekly") {
+                        // Weekly format: 2026-W21
+                        return /^\d{4}-W\d+$/i.test(monthVal) || monthVal.toLowerCase().includes("w");
+                      }
+                      if (timePeriodFilter === "monthly") {
+                        // Monthly format: YYYY-MM or Month names
+                        return /^\d{4}-\d{2}$/.test(monthVal) || /^[a-z]{3,9}$/i.test(monthVal) || monthVal.length === 7;
+                      }
+                      if (timePeriodFilter === "yearly") {
+                        // Yearly format: YYYY
+                        return /^\d{4}$/.test(monthVal);
+                      }
+                      return true;
+                    });
+                    
+                    return filteredRecords.map((r) => (
+                      <option key={r.id} value={r.id}>{r.month}</option>
+                    ));
+                  })()}
                 </select>
                 <ChevronDown className="absolute top-1/2 -translate-y-1/2 right-4 w-5 h-5 text-white/30 pointer-events-none" />
               </div>

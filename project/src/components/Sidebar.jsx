@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { authService } from "../services/api";
+import { authService, customChatbotService } from "../services/api";
 import {
   Home, Zap, Mic, BarChart3, Settings, LogOut,
   ChevronRight, Package,
@@ -19,13 +19,25 @@ const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const [customBots, setCustomBots] = useState([]);
+
   useEffect(() => {
     setRole(authService.getRole());
+    
+    // Fetch custom bots linked to the current logged-in user
+    const fetchUserBots = async () => {
+      try {
+        const res = await customChatbotService.myBots();
+        setCustomBots(res.data || []);
+      } catch (e) {
+        console.error("Failed to load user custom chatbots in sidebar", e);
+      }
+    };
+    fetchUserBots();
   }, []);
 
   const handleLogout = () => {
     authService.logout();
-    navigate("/login", { replace: true });
   };
 
   const NavItem = ({ to, icon: Icon, label, badge, exact = false }) => (
@@ -187,18 +199,27 @@ const Sidebar = () => {
               isOpen={chatbotOpen || location.pathname.startsWith('/chatbot')}
               onToggle={() => setChatbotOpen(!chatbotOpen)}
             >
-              <NavItem to="/chatbot/productivity" icon={MessageCircle} label="Productivity Bot" />
-              <NavItem to="/chatbot/energy" icon={Zap} label="Energy Bot" />
-              <NavItem to="/chatbot/hr" icon={Users} label="Hr Bot" />
-              <NavItem to="/chatbot/process" icon={Activity} label="Process Bot" />
+              {customBots.length > 0 ? (
+                customBots.map((bot) => (
+                  <NavItem
+                    key={bot.id}
+                    to={`/chatbot/${bot.id}`}
+                    icon={MessageCircle}
+                    label={bot.name}
+                  />
+                ))
+              ) : (
+                <>
+                  <NavItem to="/chatbot/productivity" icon={MessageCircle} label="Productivity Bot" />
+                  <NavItem to="/chatbot/energy" icon={Zap} label="Energy Bot" />
+                  <NavItem to="/chatbot/hr" icon={Users} label="Hr Bot" />
+                  <NavItem to="/chatbot/process" icon={Activity} label="Process Bot" />
+                </>
+              )}
             </SubMenu>
           )}
 
-          {role !== "org_admin" && (
-            <>
-              <NavItem to="/calculate" icon={BarChart3} label="Productivity Calc" />
-            </>
-          )}
+          {/* Productivity Calc removed - Task 9 */}
 
           {(role === "org_admin" || role === "system_admin") && (
             <>

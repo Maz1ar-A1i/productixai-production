@@ -21,34 +21,10 @@ class RegisterRequest(BaseModel):
 # ------------------------
 @router.post("/register", response_model=schemas.UserResponse)
 def register_org(body: RegisterRequest, db: Session = Depends(get_db)):
-    user_in = body.user_in
-    org_in = body.org_in
-
-    # Check if email already registered
-    existing = db.query(models.User).filter(models.User.email == user_in.email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    # Create org
-    org = models.Organization(name=org_in.name, subscription_plan=org_in.subscription_plan)
-    db.add(org)
-    db.commit()
-    db.refresh(org)
-
-    # Create admin user
-    hashed = auth.hash_password(user_in.password)
-    user = models.User(
-        name=user_in.name,
-        email=user_in.email,
-        password_hash=hashed,
-        role=models.UserRole.org_admin,
-        organization_id=org.id,
-        is_verified=True,  # auto-verify for API-registered users
+    raise HTTPException(
+        status_code=403,
+        detail="Registration is disabled. Accounts must be created by an administrator."
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 # ------------------------

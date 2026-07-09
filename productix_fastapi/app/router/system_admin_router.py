@@ -123,7 +123,8 @@ def create_org_user(
         password_hash=hash_password(user_in.password),
         role=user_in.role,
         organization_id=org_id,
-        is_verified=True # Auto-verify users created by admin
+        is_verified=True, # Auto-verify users created by admin
+        requires_password_change=True
     )
     db.add(new_user)
     try:

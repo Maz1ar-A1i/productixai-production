@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../services/api";
+import api, { authService } from "../services/api";
 import { 
   Users, Building, ToggleLeft, ToggleRight, 
   Trash2, Plus, LayoutDashboard, ShieldCheck,
@@ -110,8 +110,7 @@ const SystemAdmin = () => {
   useEffect(() => { fetchData(); }, []);
 
   const logout = () => {
-    localStorage.removeItem("token");
-    navigate("/login", { replace: true });
+    authService.logout();
   };
 
   const createOrganization = async (e) => {

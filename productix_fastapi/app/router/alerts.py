@@ -121,7 +121,29 @@ def list_alerts(
     if severity:
         query = query.filter(models.Alert.severity == severity)
     
-    return query.order_by(models.Alert.created_at.desc()).limit(limit).all()
+    results = query.order_by(models.Alert.created_at.desc()).all()
+    
+    # Filter out alerts for deleted KPIs
+    active_kpi_ids = {
+        k.id for k in db.query(models.KPIDefinition).filter(
+            models.KPIDefinition.organization_id == current_user.organization_id,
+            models.KPIDefinition.is_active == True
+        ).all()
+    }
+    
+    filtered_results = []
+    for alert in results:
+        if alert.entity_type == "kpi" and alert.entity_id not in active_kpi_ids:
+            # Clean up/delete the stale alert from database in the background so it doesn't build up
+            try:
+                db.delete(alert)
+                db.commit()
+            except:
+                db.rollback()
+            continue
+        filtered_results.append(alert)
+        
+    return filtered_results[:limit]
 
 
 @router.get("/{alert_id}", response_model=schemas.AlertResponse)

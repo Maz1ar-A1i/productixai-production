@@ -31,6 +31,7 @@ const Reports = () => {
   const [dailyReport, setDailyReport] = useState([]);
   const [trendData, setTrendData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [timePeriod, setTimePeriod] = useState('all'); // Task 5: time period filter
 
   useEffect(() => {
     // 1. Fetch backend products
@@ -50,42 +51,67 @@ const Reports = () => {
           unitData: t
         }));
 
-        setProducts([...res.data, ...mappedLS]);
+        const combined = [...res.data, ...mappedLS];
+        const uniqueProducts = [];
+        const seenNames = new Set();
+        combined.forEach(p => {
+          const lowerName = p.name ? p.name.trim().toLowerCase() : "";
+          if (lowerName && !seenNames.has(lowerName)) {
+            seenNames.add(lowerName);
+            uniqueProducts.push(p);
+          }
+        });
+
+        setProducts(uniqueProducts);
       })
       .catch((err) => console.error(err));
   }, []);
 
   useEffect(() => {
     if (selectedProduct) {
-      if (typeof selectedProduct === 'string' && selectedProduct.startsWith('ls_')) {
-        // Handle localStorage records
-        const unitId = selectedProduct.replace('ls_', '');
-        try {
-          const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
-          const unitData = allData[unitId] || { unitRows: [], customerRows: [] };
-          
-          // Get unique dates as "records"
-          const dates = new Set();
-          unitData.unitRows.forEach(r => r.Date && dates.add(r.Date));
-          unitData.customerRows.forEach(r => r.Date && dates.add(r.Date));
-          
-          const mappedRecords = Array.from(dates).sort((a,b) => new Date(b) - new Date(a)).map(date => ({
-            id: `ls_rec_${date}`,
-            month: date, // Using date as the label
-            isLS: true,
-            date: date,
-            unitId: unitId
-          }));
-          setRecords(mappedRecords);
-        } catch (e) {
-          console.error("LS data load failed", e);
-          setRecords([]);
-        }
+      const isLSProduct = typeof selectedProduct === 'string' && selectedProduct.startsWith('ls_');
+      const unitId = String(selectedProduct).replace('ls_', '');
+
+      // Load local records for this product
+      let localRecords = [];
+      try {
+        const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
+        const unitData = allData[unitId] || { unitRows: [], customerRows: [] };
+        
+        // Get unique dates as "records"
+        const dates = new Set();
+        unitData.unitRows.forEach(r => r.Date && dates.add(r.Date));
+        unitData.customerRows.forEach(r => r.Date && dates.add(r.Date));
+        
+        localRecords = Array.from(dates).sort((a,b) => new Date(b) - new Date(a)).map(date => ({
+          id: `ls_rec_${date}`,
+          month: date, // Using date as the label
+          isLS: true,
+          date: date,
+          unitId: unitId
+        }));
+      } catch (e) {
+        console.error("LS data load failed", e);
+      }
+
+      if (isLSProduct) {
+        setRecords(localRecords);
       } else {
         // Handle backend records
         api.get('/data-records/', { params: { product_id: selectedProduct } })
-          .then((res) => setRecords(res.data))
-          .catch((err) => console.error(err));
+          .then((res) => {
+            const backendRecords = res.data || [];
+            const backendMonths = new Set(backendRecords.map(r => r.month));
+            
+            // Filter local records to avoid overlapping dates
+            const uniqueLocal = localRecords.filter(lr => !backendMonths.has(lr.month));
+            
+            setRecords([...backendRecords, ...uniqueLocal]);
+          })
+          .catch((err) => {
+            console.error(err);
+            setRecords(localRecords);
+          });
       }
     } else {
       setRecords([]);
@@ -100,7 +126,7 @@ const Reports = () => {
       if (typeof selectedRecord === 'string' && selectedRecord.startsWith('ls_rec_')) {
         // Calculate report from localStorage data
         const date = selectedRecord.replace('ls_rec_', '');
-        const unitId = typeof selectedProduct === 'string' ? selectedProduct.replace('ls_', '') : null;
+        const unitId = String(selectedProduct || '').replace('ls_', '');
         
         try {
           const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
@@ -229,6 +255,24 @@ const Reports = () => {
           <p className="text-white/40 text-sm">
             Select a product and record to view detailed reports and trends.
           </p>
+        </div>
+
+        {/* Task 5: Time Period Filter Pills */}
+        <div className="flex items-center gap-2 mb-6 flex-wrap">
+          <span className="text-white/40 text-xs font-bold uppercase">Time Period:</span>
+          {[['all','All'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly']].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => setTimePeriod(val)}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                timePeriod === val
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/20'
+                  : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Controls */}

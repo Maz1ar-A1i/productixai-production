@@ -28,7 +28,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
+      localStorage.clear();
       window.location.href = '/login';
     }
     if (error.response?.status === 403 && error.response?.data?.detail === "LICENSE_REQUIRED") {
@@ -76,13 +76,20 @@ export const authService = {
       // decode token to get role
       const decoded = jwtDecode(token);
       localStorage.setItem("role", decoded.role);
+
+      if (response.data.requires_password_change) {
+        localStorage.setItem("requires_password_change", "true");
+      } else {
+        localStorage.removeItem("requires_password_change");
+      }
     }
     return response.data;
   },
 
 
   logout: () => {
-    localStorage.removeItem('token');
+    localStorage.clear();
+    window.location.href = '/login';
   },
 
   getRole: () => {
@@ -261,6 +268,28 @@ export const kpiService = {
 };
 
 export default api;
+
+// Organization Settings services (chatbot, goals)
+export const orgSettingsService = {
+  getChatbotSettings: () => api.get('/organizations/me/chatbot-settings'),
+  updateChatbotSettings: (data) => api.post('/organizations/me/chatbot-settings', data),
+  getAnalysisGoals: () => api.get('/organizations/me/analysis-goals'),
+  updateAnalysisGoals: (goals) => api.post('/organizations/me/analysis-goals', { goals }),
+};
+
+// Admin User management service
+export const adminUserService = {
+  editUser: (userId, data) => api.put(`/users/${userId}`, data),
+};
+
+// Custom Chatbot Services
+export const customChatbotService = {
+  list: () => api.get('/custom-chatbots/'),
+  create: (data) => api.post('/custom-chatbots/', data),
+  update: (id, data) => api.put(`/custom-chatbots/${id}`, data),
+  delete: (id) => api.delete(`/custom-chatbots/${id}`),
+  myBots: () => api.get('/custom-chatbots/my-bots'),
+};
 
 // Alert Notification services
 export const alertService = {

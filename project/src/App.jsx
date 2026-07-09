@@ -38,8 +38,7 @@ import TextilePlugin from './pages/plugins/TextilePlugin';
 
 // ── Legacy Productivity Module
 import Dashboard from './pages/Dashboard';
-import Calculate from './pages/Calculate';
-import Analyze from './pages/Analyze';
+// Note: Calculate and Analyze pages removed per Task 9 — files kept on disk.
 import Chatbot from './pages/Chatbot';
 import Agent from './pages/Agent';
 import Reports from './pages/productivity/Reports';
@@ -148,8 +147,7 @@ function App() {
 
             {/* ── Legacy Productivity Routes ── */}
             <Route path="/dashboard" element={<LayoutRoute element={<Dashboard />} />} />
-            <Route path="/calculate" element={<LayoutRoute element={<Calculate />} />} />
-            <Route path="/analyze" element={<LayoutRoute element={<Analyze />} />} />
+            {/* /calculate and /analyze routes removed (Task 9) */}
             <Route path="/chatbot" element={<LayoutRoute element={<Chatbot />} />} />
             <Route path="/chatbot/:botType" element={<LayoutRoute element={<Chatbot />} />} />
             <Route path="/agent" element={<LayoutRoute element={<Agent />} />} />

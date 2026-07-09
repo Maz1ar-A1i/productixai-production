@@ -486,6 +486,159 @@ const CreateKPIModal = ({ onClose, onCreated }) => {
 };
 
 
+// ── Edit KPI Modal ───────────────────────────────────────────────────────────
+const EditKPIModal = ({ kpi, onClose, onUpdated }) => {
+  const [form, setForm] = useState({
+    name: kpi.name || '',
+    description: kpi.description || '',
+    category: kpi.category || 'operational',
+    unit: kpi.unit || '',
+    target_value: kpi.target_value !== null && kpi.target_value !== undefined ? String(kpi.target_value) : '',
+    warning_threshold: kpi.warning_threshold !== null && kpi.warning_threshold !== undefined ? String(kpi.warning_threshold) : '',
+    critical_threshold: kpi.critical_threshold !== null && kpi.critical_threshold !== undefined ? String(kpi.critical_threshold) : '',
+    higher_is_better: kpi.higher_is_better !== undefined ? kpi.higher_is_better : true,
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleUpdate = async () => {
+    if (!form.name.trim()) return;
+    setIsSubmitting(true);
+    try {
+      await kpiService.updateDefinition(kpi.id, {
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        category: form.category,
+        unit: form.unit.trim() || "",
+        target_value: form.target_value ? parseFloat(form.target_value) : null,
+        warning_threshold: form.warning_threshold ? parseFloat(form.warning_threshold) : null,
+        critical_threshold: form.critical_threshold ? parseFloat(form.critical_threshold) : null,
+        higher_is_better: form.higher_is_better,
+      });
+      onUpdated();
+      onClose();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to update KPI');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-xl w-full mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-xl font-bold text-white">Edit KPI: {kpi.name}</h2>
+          <button onClick={onClose} className="text-white/40 hover:text-white text-xl">✕</button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs text-white/50 block mb-1">KPI Name <span className="text-red-500">*</span></label>
+            <input
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="KPI Name"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-white/50 block mb-1">Description (optional)</label>
+            <textarea
+              value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              rows={2}
+              placeholder="Enter description..."
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-white/50 block mb-1">Category</label>
+              <select
+                value={form.category}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+              >
+                <option value="operational" className="bg-slate-900">Operational</option>
+                <option value="financial" className="bg-slate-900">Financial</option>
+                <option value="trend" className="bg-slate-900">Trend</option>
+                <option value="custom" className="bg-slate-900">Custom</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs text-white/50 block mb-1">Unit</label>
+              <input
+                value={form.unit}
+                onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}
+                placeholder="E.g., %, PKR, KW"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-white/50 block mb-1">Target</label>
+              <input
+                type="number"
+                placeholder="Target"
+                value={form.target_value}
+                onChange={e => setForm(f => ({ ...f, target_value: e.target.value }))}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-amber-400/80 block mb-1">⚠ Warning</label>
+              <input
+                type="number"
+                placeholder="Warning"
+                value={form.warning_threshold}
+                onChange={e => setForm(f => ({ ...f, warning_threshold: e.target.value }))}
+                className="w-full bg-white/5 border border-amber-500/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-red-400/80 block mb-1">🔴 Critical</label>
+              <input
+                type="number"
+                placeholder="Critical"
+                value={form.critical_threshold}
+                onChange={e => setForm(f => ({ ...f, critical_threshold: e.target.value }))}
+                className="w-full bg-white/5 border border-red-500/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 py-2">
+            <input
+              type="checkbox"
+              id="edit_higher_is_better"
+              checked={form.higher_is_better}
+              onChange={e => setForm(f => ({ ...f, higher_is_better: e.target.checked }))}
+              className="w-4 h-4 rounded border-white/10 bg-white/5 text-purple-600 focus:ring-purple-500"
+            />
+            <label htmlFor="edit_higher_is_better" className="text-xs text-white/70 select-none cursor-pointer">
+              Higher values are better (e.g. profit). Uncheck for cost metrics.
+            </label>
+          </div>
+
+          <button
+            onClick={handleUpdate}
+            disabled={!form.name.trim() || isSubmitting}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold text-sm hover:opacity-90 disabled:opacity-40 transition-all mt-2"
+          >
+            {isSubmitting ? 'Updating...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -495,9 +648,11 @@ const KPIDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState(null);
+  const [granularityFilter, setGranularityFilter] = useState('all'); // Task 4
   const [selectedKPI, setSelectedKPI] = useState(null);
   const [history, setHistory] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingKPI, setEditingKPI] = useState(null);
   const [isComputing, setIsComputing] = useState(false);
 
   const role = authService.getRole();
@@ -570,7 +725,11 @@ const KPIDashboard = () => {
   }
 
   const summary = dashboard?.summary || {};
-  const kpis = dashboard?.kpis || [];
+  const rawKpis = dashboard?.kpis || [];
+  // Task 4: client-side granularity filter
+  const kpis = granularityFilter === 'all'
+    ? rawKpis
+    : rawKpis.filter(k => (k.granularity || 'monthly').toLowerCase() === granularityFilter);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-6 rounded-lg">
@@ -624,7 +783,7 @@ const KPIDashboard = () => {
         </div>
 
         {/* ── Category Filter ────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 mb-6 flex-wrap">
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
           <button
             onClick={() => setCategoryFilter(null)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${!categoryFilter ? 'bg-purple-600 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'}`}
@@ -643,6 +802,24 @@ const KPIDashboard = () => {
               </button>
             );
           })}
+        </div>
+
+        {/* ── Task 4: Time Period Filter ─────────────────────────────────────── */}
+        <div className="flex items-center gap-2 mb-6 flex-wrap">
+          <span className="text-white/30 text-xs font-bold uppercase mr-1">Period:</span>
+          {[['all', 'All'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['quarterly', 'Quarterly']].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => setGranularityFilter(val)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                granularityFilter === val
+                  ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-black'
+                  : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* ── Error ───────────────────────────────────────────────────────────── */}
@@ -681,13 +858,25 @@ const KPIDashboard = () => {
                   isAdmin={isAdmin}
                 />
                 {isAdmin && (
-                  <button
-                    onClick={(e) => handleDeleteKPI(kpi.id, e)}
-                    className="absolute top-3 right-3 p-1.5 rounded-lg bg-red-500/10 text-red-400 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500/20"
-                    title="Remove KPI"
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-40 group-hover:opacity-100 transition-all duration-200">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingKPI(kpi);
+                      }}
+                      className="p-1.5 rounded-lg bg-purple-500/30 text-purple-200 border border-purple-500/30 hover:bg-purple-600 hover:text-white hover:border-purple-600 shadow-lg transition-all"
+                      title="Edit KPI"
+                    >
+                      <Edit3 size={14} />
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteKPI(kpi.id, e)}
+                      className="p-1.5 rounded-lg bg-red-500/30 text-red-200 border border-red-500/30 hover:bg-red-600 hover:text-white hover:border-red-600 shadow-lg transition-all"
+                      title="Remove KPI"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -708,6 +897,14 @@ const KPIDashboard = () => {
         <CreateKPIModal
           onClose={() => setShowCreateModal(false)}
           onCreated={fetchDashboard}
+        />
+      )}
+
+      {editingKPI && (
+        <EditKPIModal
+          kpi={editingKPI}
+          onClose={() => setEditingKPI(null)}
+          onUpdated={fetchDashboard}
         />
       )}
     </div>

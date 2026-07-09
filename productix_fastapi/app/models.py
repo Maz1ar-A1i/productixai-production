@@ -9,7 +9,7 @@ from sqlalchemy.orm import relationship
 from .database import Base
 import enum
 from datetime import datetime
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 
 # ------------------------
@@ -36,13 +36,14 @@ class BatchStatus(enum.Enum):
 # Login / Auth Schemas
 # -------------------
 class LoginSchema(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 
 class TokenSchema(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    requires_password_change: bool = False
 
 # ------------------------
 # Organization (Tenant)
@@ -55,6 +56,10 @@ class Organization(Base):
     subscription_plan = Column(String(50), default="free")
     status = Column(String(50), default="active")
     column_mappings = Column(JSON, default={})
+    user_limit = Column(Integer, default=5, nullable=False)
+    chatbot_name = Column(String(100), default="Productix AI", nullable=True)
+    chatbot_persona = Column(Text, default="a helpful AI assistant specialized in operational productivity analysis", nullable=True)
+    analysis_goals = Column(JSON, default=[], nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     # relationships
@@ -79,6 +84,10 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.org_user, nullable=False)
     is_verified = Column(Boolean, default=True)
     is_active = Column(Boolean, default=True)
+    requires_password_change = Column(Boolean, default=False, nullable=False)
+    chatbot_name = Column(String(100), default="Productix AI", nullable=True)
+    chatbot_persona = Column(Text, default="a helpful AI assistant specialized in operational productivity analysis", nullable=True)
+    analysis_goals = Column(JSON, default=[], nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     organization = relationship("Organization", back_populates="users")
@@ -497,4 +506,20 @@ class License(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user = relationship("User", foreign_keys=[account_id])
-    organization = relationship("Organization", foreign_keys=[organization_id])
+    organization = relationship("Organization", foreign_keys=[organization_id])
+
+
+class CustomChatbot(Base):
+    __tablename__ = "custom_chatbots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    goals = Column(JSON, default=[], nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    organization = relationship("Organization")
+    user = relationship("User", foreign_keys=[user_id])
+

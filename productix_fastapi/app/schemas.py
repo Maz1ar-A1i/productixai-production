@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Any, Dict, Optional, List, Union
 from decimal import Decimal
 from datetime import datetime,date
@@ -8,13 +8,14 @@ from .models import UserRole
 # Login / Auth Schemas
 # -------------------
 class LoginSchema(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 
 class TokenSchema(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    requires_password_change: bool = False
 # ------------------------
 # AUTH
 # ------------------------
@@ -30,7 +31,7 @@ class TokenData(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 
@@ -39,7 +40,7 @@ class UserLogin(BaseModel):
 # ------------------------
 class UserBase(BaseModel):
     name: Optional[str] = None
-    email: EmailStr
+    email: str
 
 
 class UserCreate(UserBase):
@@ -52,6 +53,9 @@ class UserResponse(UserBase):
     role: UserRole
     organization_id: int
     is_active: bool
+    chatbot_name: Optional[str] = "Productix AI"
+    chatbot_persona: Optional[str] = "a helpful AI assistant specialized in operational productivity analysis"
+    analysis_goals: Optional[List[str]] = []
     created_at: datetime
 
     class Config:
@@ -65,6 +69,7 @@ class OrganizationBase(BaseModel):
     name: str
     subscription_plan: Optional[str] = "free"
     column_mappings: Optional[Dict[str, str]] = {}
+    user_limit: Optional[int] = 5
 
 
 class OrganizationCreate(OrganizationBase):
@@ -313,6 +318,27 @@ class ChatbotHistoryResponse(BaseModel):
     query: str
     response: Dict
     created_at: str
+
+    class Config:
+        from_attributes = True
+
+# ------------------------
+# CUSTOM CHATBOT (Task 8 & 7)
+# ------------------------
+class CustomChatbotCreate(BaseModel):
+    user_id: int
+    name: str
+    description: Optional[str] = None
+    goals: Optional[List[str]] = []
+
+class CustomChatbotResponse(BaseModel):
+    id: int
+    organization_id: int
+    user_id: int
+    name: str
+    description: Optional[str] = None
+    goals: Optional[List[str]] = []
+    created_at: datetime
 
     class Config:
         from_attributes = True

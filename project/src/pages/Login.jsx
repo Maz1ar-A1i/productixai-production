@@ -130,15 +130,15 @@ const Login = () => {
             <div>
               <label className="form-label">
                 <Mail className="inline mr-2" size={16} />
-                Email Address
+                Username or Email
               </label>
               <input
-                type="email"
+                type="text"
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
                 className="input-field"
-                placeholder="Enter your email"
+                placeholder="Enter your username or email"
                 required
               />
             </div>
@@ -169,9 +169,8 @@ const Login = () => {
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-white/70">
-              Don't have an account?{' '}
-              Contact: 03214917181
+            <p className="text-white/50 text-xs">
+              Contact support to request an account: 03214917181
             </p>
           </div>
         </div>

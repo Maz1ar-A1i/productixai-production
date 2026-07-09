@@ -331,56 +331,61 @@ def get_record_report(
         if not assignment:
             raise HTTPException(status_code=403, detail="You do not have access to this unit.")
 
-    data = record.data or {}
-    output_keywords = ["revenue", "sales", "traffic", "capacity", "units", "produced"]
-    
+    from ..data_pipeline import parse_legacy_record, OUTPUT_KEYWORDS
+
+    normalised = parse_legacy_record(record.data or {})
+    unit_data = normalised.get("unit_data", {})
+    customer_data = normalised.get("customer_data", [])
+    computed_data = normalised.get("computed", {})
+
     inputs = {}
     outputs = {}
     total_output = 0.0
     total_input_cost = 0.0
-
-    # Heuristic mapping for either new nested Multi-Tenant JSON or legacy flat JSON
     per_input_stats = {}
-    
-    # helper for processing key-values
-    def process_kv(k, v, is_explicit_input=None):
-        nonlocal total_output, total_input_cost, inputs, outputs, per_input_stats
+
+    # Helper to classify and aggregate metrics
+    def process_kv(k, v):
+        nonlocal total_output, total_input_cost
         try:
             val = float(v)
-        except: return
+        except (ValueError, TypeError):
+            return
         
         k_lower = k.lower()
-        is_output = False
-        if is_explicit_input is False:
-            is_output = True
-        elif is_explicit_input is True:
-            is_output = False
-        else:
-            is_output = any(kw in k_lower for kw in output_keywords)
-            
+        is_output = any(kw in k_lower for kw in OUTPUT_KEYWORDS)
+        
         if is_output:
-            outputs[k] = outputs.get(k, 0) + val
+            outputs[k] = outputs.get(k, 0.0) + val
             total_output += val
         else:
-            inputs[k] = inputs.get(k, 0) + val
+            inputs[k] = inputs.get(k, 0.0) + val
             total_input_cost += val
-            per_input_stats[k] = {
-                "total_used": inputs[k],
-                "unit_price": 1.0, 
-                "total_cost": inputs[k],
-                "cost_per_output_unit": (inputs[k] / total_output) if total_output > 0 else 0,
-                "productivity_ratio": (total_output / inputs[k]) if inputs[k] > 0 else 0
-            }
 
-    if "tenants" in data and isinstance(data["tenants"], list):
-        for tenant in data["tenants"]:
-            for k, v in tenant.get("inputs", {}).items():
-                process_kv(k, v, is_explicit_input=True)
-            for k, v in tenant.get("outputs", {}).items():
-                process_kv(k, v, is_explicit_input=False)
-    else:
-        for k, v in data.items():
-            process_kv(k, v, is_explicit_input=None)
+    # 1. Process overall unit-level metrics
+    for k, v in unit_data.items():
+        process_kv(k, v)
+
+    # 2. Process customer-level metrics
+    for cust in customer_data:
+        for k, v in cust.items():
+            if k == "name":
+                continue
+            process_kv(k, v)
+
+    # 3. Process computed fields (like KPI formulas)
+    for k, v in computed_data.items():
+        process_kv(k, v)
+
+    # Calculate per-input stats
+    for k, v in inputs.items():
+        per_input_stats[k] = {
+            "total_used": v,
+            "unit_price": 1.0, 
+            "total_cost": v,
+            "cost_per_output_unit": (v / total_output) if total_output > 0 else 0,
+            "productivity_ratio": (total_output / v) if v > 0 else 0
+        }
 
     # Map to legacy structure for frontend compatibility
     return {

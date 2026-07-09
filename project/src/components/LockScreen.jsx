@@ -90,6 +90,15 @@ const LockScreen = ({ status, onUnlock }) => {
           showForm: false,
           isConnectionError: true
         };
+      case "UNLICENSED":
+        return {
+          title: "Activate Your Workspace",
+          desc: "Your account credentials are set. Now enter the license key provided by your administrator to bind and activate your workspace.",
+          icon: Key,
+          iconColor: "#00F0FF",
+          showForm: true,
+          isFirstTimeSetup: true
+        };
       default:
         return {
           title: "License Registration Required",
@@ -106,8 +115,10 @@ const LockScreen = ({ status, onUnlock }) => {
 
   const userRole = localStorage.getItem('role');
   const isAdmin = userRole === 'org_admin' || userRole === 'system_admin';
-  const showForm = details.showForm && isAdmin;
-  const displayDesc = (details.showForm && !isAdmin)
+  const isPendingSetup = localStorage.getItem('pending_license_registration') === 'true';
+  // During first-time setup (pending_license_registration), always show the form regardless of role
+  const showForm = details.showForm && (isAdmin || isPendingSetup);
+  const displayDesc = (details.showForm && !isAdmin && !isPendingSetup)
     ? "Access Locked. Your organization's license is currently inactive or has been suspended. Please contact your organization administrator to activate the workspace."
     : details.desc;
 
@@ -129,6 +140,21 @@ const LockScreen = ({ status, onUnlock }) => {
           className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-1 blur-md transition-colors duration-300"
           style={{ backgroundColor: details.iconColor }}
         />
+
+        {/* Step indicator — only for first-time setup flow */}
+        {isPendingSetup && (
+          <div className="flex items-center justify-center gap-2 mb-6">
+            <div className="flex items-center gap-1.5">
+              <div className="w-6 h-6 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-zinc-500 text-xs font-bold">✓</div>
+              <span className="text-xs text-zinc-500 font-semibold">Credentials</span>
+            </div>
+            <div className="w-8 h-px bg-white/20" />
+            <div className="flex items-center gap-1.5">
+              <div className="w-6 h-6 rounded-full bg-teal-500 flex items-center justify-center text-black text-xs font-bold">2</div>
+              <span className="text-xs text-teal-400 font-semibold">License Key</span>
+            </div>
+          </div>
+        )}
 
         {/* Pulsing Shield Icon Container */}
         <div className="flex justify-center mb-6">
@@ -199,6 +225,30 @@ const LockScreen = ({ status, onUnlock }) => {
           </form>
         )}
 
+        {/* Re-check Status Option for Revoked, Expired, or Offline Timeout licenses */}
+        {(status.reason === "REVOKED" || status.reason === "EXPIRED" || status.reason === "OFFLINE_TIMEOUT") && (
+          <div className="px-4 mb-4">
+            <button
+              onClick={async () => {
+                setLoading(true);
+                setErrorMsg("");
+                try {
+                  await onUnlock();
+                } catch (err) {
+                  setErrorMsg("Verification failed. Central license registry is unreachable.");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+              className="w-full py-3.5 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-black font-bold flex items-center justify-center gap-2 hover:shadow-[0_0_20px_rgba(20,184,166,0.3)] transition-all cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+              <span>Check License Status</span>
+            </button>
+          </div>
+        )}
+
         {/* Connection Error Retry Option */}
         {details.isConnectionError && (
           <div className="px-4">
@@ -227,7 +277,10 @@ const LockScreen = ({ status, onUnlock }) => {
 
         {/* Footer Support Info */}
         <div className="mt-8 pt-6 border-t border-white/5 text-[10px] mono text-zinc-600 font-semibold uppercase tracking-wider">
-          Productix Security Architecture v1.4.2
+          {isPendingSetup
+            ? 'Productix Security Architecture v1.4.2 · Step 2 of 2'
+            : 'Productix Security Architecture v1.4.2'
+          }
         </div>
       </div>
     </div>

@@ -312,7 +312,7 @@ export default function TelcoPlugin() {
         let combined = [];
         try {
           const params = { granularity: filters.granularity };
-          if (filters.productId && !filters.productId.startsWith('ls_')) {
+          if (filters.productId && !String(filters.productId).startsWith('ls_')) {
             params.product_id = filters.productId;
           }
           const res = await api.get('/analytics/aggregation', { params });

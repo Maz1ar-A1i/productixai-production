@@ -229,6 +229,18 @@ def delete_kpi(
         raise HTTPException(status_code=404, detail="KPI not found.")
 
     kpi.is_active = False
+    
+    # Clean up associated alerts for this KPI immediately
+    from ..models import Alert
+    try:
+        db.query(Alert).filter(
+            Alert.organization_id == current_user.organization_id,
+            Alert.entity_type == "kpi",
+            Alert.entity_id == kpi_id
+        ).delete(synchronize_session="fetch")
+    except Exception as e:
+        print("Failed to delete KPI alerts on cleanup:", e)
+
     db.commit()
 
 
