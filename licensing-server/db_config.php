@@ -1,20 +1,23 @@
 <?php
 // db_config.php
-// Configuration settings for database and security parameters
+// Configuration settings for database and security parameters.
+// All secret values MUST be set as server environment variables.
+// Do NOT hardcode credentials here — this file is tracked by git.
 
 // 1. Database Connection Credentials
-define('DB_HOST', 'localhost');
-define('DB_USER', 'hubtecho_license');
-define('DB_PASS', 'thvNAgEcCGsFE8t%');
-define('DB_NAME', 'hubtecho_license');
+// Set these in your server environment (cPanel, .env, Apache SetEnv, etc.)
+define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+define('DB_USER', getenv('DB_USER') ?: '');
+define('DB_PASS', getenv('DB_PASS') ?: '');
+define('DB_NAME', getenv('DB_NAME') ?: '');
 
 // 2. Security Configuration
 // Shared HMAC signing key - MUST match the LICENSE_SIGNING_KEY in your Python client app
-define('LICENSE_SIGNING_KEY', 'PRODUCTIX_SECRET_LICENSE_SIGNING_KEY_2026_DEFAULT');
+define('LICENSE_SIGNING_KEY', getenv('LICENSE_SIGNING_KEY') ?: '');
 
 // Admin panel credentials for dashboard access
-define('ADMIN_USER', 'admin');
-define('ADMIN_PASS', 'AdminProductix2026!'); // Set a secure password here
+define('ADMIN_USER', getenv('ADMIN_USER') ?: 'admin');
+define('ADMIN_PASS', getenv('ADMIN_PASS') ?: '');
 
 // 3. Establish PDO Database Connection
 function get_db_connection() {

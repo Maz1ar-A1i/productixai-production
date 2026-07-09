@@ -48,7 +48,9 @@ async def login(credentials: LoginSchema, db: Session = Depends(get_db)):
                 user_limit_val = res_data.get("userLimit", 5)
                 serialized = f'{{"expiresAt": {expires_val}, "organizationName": "{res_data["organizationName"]}", "requiresPasswordChange": {req_change_val}, "role": "{res_data["role"]}", "userLimit": {user_limit_val}, "username": "{res_data["username"]}", "valid": true}}'
 
-                signing_key = os.getenv("LICENSE_SIGNING_KEY", "PRODUCTIX_SECRET_LICENSE_SIGNING_KEY_2026_DEFAULT")
+                signing_key = os.getenv("LICENSE_SIGNING_KEY")
+                if not signing_key:
+                    raise RuntimeError("[SECURITY] LICENSE_SIGNING_KEY environment variable is not set.")
                 expected_sig = hmac.new(signing_key.encode("utf-8"), serialized.encode("utf-8"), hashlib.sha256).hexdigest()
 
                 if hmac.compare_digest(expected_sig, server_sig):

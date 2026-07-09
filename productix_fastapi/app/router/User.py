@@ -318,7 +318,9 @@ def update_credentials(
         
         # Serialize with sorted keys (alphabetical order) and no spaces
         serialized = json.dumps(update_payload, sort_keys=True, separators=(',', ':'))
-        signing_key = os.getenv("LICENSE_SIGNING_KEY", "PRODUCTIX_SECRET_LICENSE_SIGNING_KEY_2026_DEFAULT")
+        signing_key = os.getenv("LICENSE_SIGNING_KEY")
+        if not signing_key:
+            raise RuntimeError("[SECURITY] LICENSE_SIGNING_KEY environment variable is not set.")
         signature = hmac.new(signing_key.encode("utf-8"), serialized.encode("utf-8"), hashlib.sha256).hexdigest()
         
         headers = {
