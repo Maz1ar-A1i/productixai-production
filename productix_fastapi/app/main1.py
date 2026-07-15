@@ -66,6 +66,7 @@ origins = [
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "https://productix.techohub.net",
+    "https://productixcp.techohub.net",  # Production deployment
 ]
 
 env_origins = os.getenv("CORS_ORIGINS")
@@ -174,12 +175,24 @@ async def enforce_client_licensing(request, call_next):
                         )
                     
                     if user_org_id:
-                        # Check organization's license key status in DB directly, matching the cached key
-                        lic = db.query(License).filter(
-                            License.organization_id == user_org_id,
-                            License.license_key == cached_key,
-                            License.status == "active"
-                        ).first()
+                        # Check organization's license key status in DB.
+                        # If a local cache exists, match against the cached key (machine-bound).
+                        # If no cache exists (e.g. fresh cloud deployment), fall back to any
+                        # active license for this org so the user can reach the LockScreen
+                        # and register their key, which will then bind it to the server machine.
+                        if cached_key:
+                            lic = db.query(License).filter(
+                                License.organization_id == user_org_id,
+                                License.license_key == cached_key,
+                                License.status == "active"
+                            ).first()
+                        else:
+                            # No local cache — allow any active org license through so the
+                            # user can log in and register (bind) their key via the LockScreen.
+                            lic = db.query(License).filter(
+                                License.organization_id == user_org_id,
+                                License.status == "active"
+                            ).first()
                         
                         # Handle expiration check
                         if lic and lic.expires_at and lic.expires_at < datetime.utcnow():
@@ -188,21 +201,11 @@ async def enforce_client_licensing(request, call_next):
                             lic = None
                             
                         if not lic:
-                            # Check if the org has any active license key (but different from cache)
-                            any_active = db.query(License).filter(
-                                License.organization_id == user_org_id,
-                                License.status == "active"
-                            ).first()
-                            
-                            if any_active:
-                                # We have an active key, but it's not registered on this machine yet
-                                reason = "UNLICENSED"
-                            else:
-                                # Find if there is an expired/revoked key to return exact reason
-                                any_lic = db.query(License).filter(
-                                    License.organization_id == user_org_id
-                                ).order_by(License.id.desc()).first()
-                                reason = any_lic.status.upper() if any_lic else "UNLICENSED"
+                            # Find if there is an expired/revoked key to return exact reason
+                            any_lic = db.query(License).filter(
+                                License.organization_id == user_org_id
+                            ).order_by(License.id.desc()).first()
+                            reason = any_lic.status.upper() if any_lic else "UNLICENSED"
                                 
                             from fastapi.responses import JSONResponse
                             return JSONResponse(
