@@ -80,6 +80,101 @@ def get_me(current_user: models.User = Depends(deps.get_current_user)):
     return current_user
 
 # -------------------------------
+# Update own credentials (any authenticated user)
+# IMPORTANT: This MUST be defined BEFORE /{user_id} so FastAPI does not
+# try to match the literal string "update-credentials" as an int user_id.
+# -------------------------------
+class UpdateCredentialsRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+
+@router.put("/update-credentials", response_model=schemas.UserResponse)
+def update_credentials(
+    payload: UpdateCredentialsRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(deps.get_current_user)
+):
+    import os
+    import hmac
+    import hashlib
+    import json
+    import time
+    import requests
+    from ..client_license_manager import get_central_server_url
+
+    # 1. Local Validations and Assignments
+    if payload.name is not None:
+        current_user.name = payload.name
+    
+    new_email = current_user.email
+    if payload.email is not None:
+        email_str = payload.email.strip()
+        if email_str != current_user.email:
+            existing = db.query(models.User).filter(models.User.email == email_str).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="Email already registered locally")
+            new_email = email_str
+
+    new_password = ""
+    if payload.password is not None:
+        if len(payload.password) < 8:
+            raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+        new_password = payload.password
+
+    # 2. Synchronize to Central Licensing Server
+    if current_user.role != models.UserRole.system_admin:
+        server_url = get_central_server_url()
+        timestamp = int(time.time())
+        update_payload = {
+            "username": current_user.email,
+            "new_username": new_email,
+            "new_password": new_password,
+            "timestamp": timestamp
+        }
+        
+        # Serialize with sorted keys (alphabetical order) and no spaces
+        serialized = json.dumps(update_payload, sort_keys=True, separators=(',', ':'))
+        signing_key = os.getenv("LICENSE_SIGNING_KEY", "PRODUCTIX_SECRET_LICENSE_SIGNING_KEY_2026_DEFAULT")
+        signature = hmac.new(signing_key.encode("utf-8"), serialized.encode("utf-8"), hashlib.sha256).hexdigest()
+        
+        headers = {
+            "Content-Type": "application/json",
+            "X-Update-Signature": signature
+        }
+        
+        try:
+            update_endpoint = f"{server_url}/api/update_profile.php"
+            response = requests.post(update_endpoint, json=update_payload, headers=headers, timeout=8)
+            if response.status_code == 409:
+                raise HTTPException(status_code=400, detail="Email/Username already registered on central server")
+            elif response.status_code != 200:
+                detail_msg = "Failed to sync credentials with central licensing server"
+                try:
+                    res_json = response.json()
+                    if "error" in res_json:
+                        detail_msg = res_json["error"]
+                except:
+                    pass
+                raise HTTPException(status_code=400, detail=detail_msg)
+        except requests.RequestException as e:
+            raise HTTPException(
+                status_code=503,
+                detail="Central licensing server is unreachable. Please check your internet connection before changing credentials."
+            )
+
+    # 3. Apply changes locally and commit
+    current_user.email = new_email
+    if payload.password is not None:
+        current_user.password_hash = auth.hash_password(payload.password)
+    current_user.requires_password_change = False
+    
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+# -------------------------------
 # Delete user (org_admin only)
 # -------------------------------
 @router.delete("/{user_id}")
@@ -266,94 +361,3 @@ def assign_units(
     db.commit()
     return {"detail": "Units assigned successfully"}
 
-
-class UpdateCredentialsRequest(BaseModel):
-    name: Optional[str] = None
-    email: Optional[str] = None
-    password: Optional[str] = None
-
-@router.put("/update-credentials", response_model=schemas.UserResponse)
-def update_credentials(
-    payload: UpdateCredentialsRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(deps.get_current_user)
-):
-    import os
-    import hmac
-    import hashlib
-    import json
-    import time
-    import requests
-    from ..client_license_manager import get_central_server_url
-
-    # 1. Local Validations and Assignments
-    if payload.name is not None:
-        current_user.name = payload.name
-    
-    new_email = current_user.email
-    if payload.email is not None:
-        email_str = payload.email.strip()
-        if email_str != current_user.email:
-            existing = db.query(models.User).filter(models.User.email == email_str).first()
-            if existing:
-                raise HTTPException(status_code=400, detail="Email already registered locally")
-            new_email = email_str
-
-    new_password = ""
-    if payload.password is not None:
-        if len(payload.password) < 8:
-            raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
-        new_password = payload.password
-
-    # 2. Synchronize to Central Licensing Server
-    if current_user.role != models.UserRole.system_admin:
-        server_url = get_central_server_url()
-        timestamp = int(time.time())
-        update_payload = {
-            "username": current_user.email,
-            "new_username": new_email,
-            "new_password": new_password,
-            "timestamp": timestamp
-        }
-        
-        # Serialize with sorted keys (alphabetical order) and no spaces
-        serialized = json.dumps(update_payload, sort_keys=True, separators=(',', ':'))
-        signing_key = os.getenv("LICENSE_SIGNING_KEY")
-        if not signing_key:
-            raise RuntimeError("[SECURITY] LICENSE_SIGNING_KEY environment variable is not set.")
-        signature = hmac.new(signing_key.encode("utf-8"), serialized.encode("utf-8"), hashlib.sha256).hexdigest()
-        
-        headers = {
-            "Content-Type": "application/json",
-            "X-Update-Signature": signature
-        }
-        
-        try:
-            update_endpoint = f"{server_url}/api/update_profile.php"
-            response = requests.post(update_endpoint, json=update_payload, headers=headers, timeout=8)
-            if response.status_code == 409:
-                raise HTTPException(status_code=400, detail="Email/Username already registered on central server")
-            elif response.status_code != 200:
-                detail_msg = "Failed to sync credentials with central licensing server"
-                try:
-                    res_json = response.json()
-                    if "error" in res_json:
-                        detail_msg = res_json["error"]
-                except:
-                    pass
-                raise HTTPException(status_code=400, detail=detail_msg)
-        except requests.RequestException as e:
-            raise HTTPException(
-                status_code=503,
-                detail="Central licensing server is unreachable. Please check your internet connection before changing credentials."
-            )
-
-    # 3. Apply changes locally and commit
-    current_user.email = new_email
-    if payload.password is not None:
-        current_user.password_hash = auth.hash_password(payload.password)
-    current_user.requires_password_change = False
-    
-    db.commit()
-    db.refresh(current_user)
-    return current_user
