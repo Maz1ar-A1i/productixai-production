@@ -112,9 +112,9 @@ async def enforce_client_licensing(request, call_next):
             return await call_next(request)
         
         unprotected_paths = [
-            "/api/license/local-status",
-            "/api/license/register-local",
-            "/api/license/validate",
+            "/license/local-status",
+            "/license/register-local",
+            "/license/validate",
             "/api/internal/master-kill",
             "/api/internal/master-restore",
             "/openapi.json",

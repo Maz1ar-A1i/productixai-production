@@ -13,7 +13,7 @@ from ..client_license_manager import (
     get_machine_id
 )
 
-router = APIRouter(prefix="/api/license", tags=["Local Client License"])
+router = APIRouter(prefix="/license", tags=["Local Client License"])
 
 class RegisterLocalRequest(BaseModel):
     licenseKey: str
@@ -164,7 +164,7 @@ def register_local_license(
 
     import requests
     from ..client_license_manager import get_central_server_url, verify_server_signature, write_encrypted_cache
-    import app.client_license_manager as clm
+    from .. import client_license_manager as clm
     from datetime import datetime
 
     server_url = get_central_server_url()

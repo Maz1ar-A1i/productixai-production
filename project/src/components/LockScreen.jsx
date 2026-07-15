@@ -17,7 +17,7 @@ const LockScreen = ({ status, onUnlock }) => {
     setLoading(true);
     setErrorMsg("");
     try {
-      const response = await api.post("/api/license/register-local", {
+      const response = await api.post("/license/register-local", {
         licenseKey: keyInput.trim()
       });
       

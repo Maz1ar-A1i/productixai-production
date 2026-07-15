@@ -69,7 +69,7 @@ function App() {
 
   const fetchLicenseStatus = async () => {
     try {
-      const res = await api.get("/api/license/local-status");
+      const res = await api.get("/license/local-status");
       setLicenseStatus(res.data);
     } catch (err) {
       console.error("Failed to fetch license status:", err);
