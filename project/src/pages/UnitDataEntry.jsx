@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Save, Plus, Trash2, ClipboardPaste, Calendar, CheckCircle2, AlertCircle, DollarSign, TrendingUp, Activity } from "lucide-react";
 import api, { formulaService, alertService, dataRecordService, productService, authService } from "../services/api";
 import { ValidationResultDisplay } from "../components/AlertNotification";
@@ -514,32 +514,97 @@ const UnitDataEntry = () => {
     }
   };
 
+  // Track which column the user last clicked — used for column-wise paste
+  const activeUnitCol = useRef(null);
+  const activeCustomerCol = useRef(null);
+
   const handlePaste = (e, type) => {
     e.preventDefault();
     const pasteData = e.clipboardData.getData("Text");
-    processPasteData(pasteData, type);
+    const activeCol = type === "unit" ? activeUnitCol.current : activeCustomerCol.current;
+    processPasteData(pasteData, type, activeCol);
   };
 
-  const processPasteData = (pasteData, type) => {
+  /**
+   * processPasteData — handles both row-wise and column-wise paste.
+   *
+   * Column-wise mode: activated when user has focused a specific column cell
+   * and the pasted data is a single column (no tabs). Each line goes into
+   * the focused column of successive rows (existing rows updated, new rows
+   * appended as needed).
+   *
+   * Row-wise mode (original): pasted data has tab-separated columns that
+   * map to table columns left-to-right.
+   */
+  const processPasteData = (pasteData, type, startColKey = null) => {
     if (!pasteData || !pasteData.trim()) return;
 
     const cols = type === "unit" ? unitColumns : customerColumns;
 
-    // Normalize line endings: Excel uses \r\n on Windows, Google Sheets uses \n
+    // Normalize line endings
     const normalized = pasteData.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     const lines = normalized.split("\n").filter(line => line.trim() !== "");
-
     if (lines.length === 0) return;
 
+    // Detect single-column paste: no tabs in any line
+    const isSingleColumn = lines.every(line => !line.includes("\t"));
+
+    // ── COLUMN-WISE PASTE ──────────────────────────────────────────────────────
+    if (isSingleColumn && startColKey) {
+      const colDef = cols.find(c => c.key === startColKey);
+      if (!colDef) {
+        // Fallback to row-wise if column not found
+        processPasteData(pasteData, type, null);
+        return;
+      }
+
+      const values = lines.map(line => {
+        let val = line.trim().replace(/\r/g, "");
+        if (colDef.type === "date") val = normalizeDate(val);
+        return val;
+      });
+
+      if (type === "unit") {
+        setUnitRows(prev => {
+          const updated = prev.map((row, i) =>
+            i < values.length ? { ...row, [startColKey]: values[i] } : row
+          );
+          // Append new rows if pasted values exceed existing rows
+          const extra = values.slice(prev.length).map((val, idx) => {
+            const newRow = { id: `paste_col_${Date.now()}_${idx}` };
+            cols.forEach(c => { newRow[c.key] = ""; });
+            newRow[startColKey] = val;
+            return newRow;
+          });
+          const combined = [...updated, ...extra];
+          return combined.map(r => runCalculations(r, "unit", formulas, combined, unitColumns, customerColumns));
+        });
+      } else {
+        setCustomerRows(prev => {
+          const updated = prev.map((row, i) =>
+            i < values.length ? { ...row, [startColKey]: values[i] } : row
+          );
+          const extra = values.slice(prev.length).map((val, idx) => {
+            const newRow = { id: `paste_col_${Date.now()}_${idx}` };
+            cols.forEach(c => { newRow[c.key] = ""; });
+            newRow[startColKey] = val;
+            return newRow;
+          });
+          const combined = [...updated, ...extra];
+          return combined.map(r => runCalculations(r, "customer", formulas, unitRows, unitColumns, customerColumns));
+        });
+      }
+      showMsg("success", `Pasted ${values.length} values into column "${colDef.label}"`);
+      return;
+    }
+
+    // ── ROW-WISE PASTE (original behaviour) ────────────────────────────────────
     const newRows = lines.map((line, idx) => {
-      // Split by tab, strip surrounding whitespace and stray \r from each cell
       const values = line.split("\t").map(v => v.trim().replace(/\r/g, ""));
       const row = { id: `paste_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}` };
       cols.forEach((c, i) => {
         let val = values[i] !== undefined ? values[i] : "";
-        if (c.type === "date") {
-          val = normalizeDate(val);
-        }
+        if (c.type === "date") val = normalizeDate(val);
         row[c.key] = val;
       });
       return row;
@@ -547,7 +612,6 @@ const UnitDataEntry = () => {
 
     if (type === "unit") {
       setUnitRows(prev => {
-        // Remove empty placeholder rows (rows where all data columns are empty)
         const filtered = prev.filter(r =>
           cols.filter(c => c.key !== "Date").some(c => r[c.key] !== "" && r[c.key] !== undefined)
         );
@@ -570,7 +634,8 @@ const UnitDataEntry = () => {
   const handlePasteButton = async (type) => {
     try {
       const text = await navigator.clipboard.readText();
-      processPasteData(text, type);
+      const activeCol = type === "unit" ? activeUnitCol.current : activeCustomerCol.current;
+      processPasteData(text, type, activeCol);
     } catch (err) {
       showMsg("error", "Could not read clipboard. Try clicking inside the table and pressing Ctrl+V.");
     }
@@ -933,11 +998,12 @@ const UnitDataEntry = () => {
                                 type={c.type === "date" ? "date" : "text"}
                                 value={row[c.key] || ""}
                                 onChange={e => handleCellChange(rIndex, c.key, e.target.value, "unit")}
+                                onFocus={() => { activeUnitCol.current = c.key; }}
                                 onPaste={isReadOnly || isCalc ? undefined : (e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
                                   const text = e.clipboardData.getData("text");
-                                  processPasteData(text, "unit");
+                                  processPasteData(text, "unit", c.key);
                                 }}
                                 placeholder={isCalc ? "Auto" : "-"}
                                 readOnly={isCalc || isReadOnly}
@@ -957,12 +1023,6 @@ const UnitDataEntry = () => {
                     ))}
                   </tbody>
                 </table>
-                {unitRows.length === 0 && (
-                  <div className="p-12 text-center text-white/20">
-                    <Calendar size={32} className="mx-auto mb-3 opacity-50" />
-                    <p>No unit data. Click Add Row or Paste data.</p>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1026,12 +1086,7 @@ const UnitDataEntry = () => {
                                     <select 
                                       value={row[c.key] || ""}
                                       onChange={e => handleCellChange(rIndex, c.key, e.target.value, "customer")}
-                                      onPaste={isReadOnly ? undefined : (e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        const text = e.clipboardData.getData("text");
-                                        processPasteData(text, "customer");
-                                      }}
+                                      onFocus={() => { activeCustomerCol.current = c.key; }}
                                       disabled={isReadOnly}
                                       className="w-full p-2 bg-transparent text-sm text-white focus:bg-white/5 focus:outline-none rounded transition-colors appearance-none"
                                       style={{
@@ -1049,11 +1104,12 @@ const UnitDataEntry = () => {
                                       type={c.type === "date" ? "date" : "text"}
                                       value={row[c.key] || ""}
                                       onChange={e => handleCellChange(rIndex, c.key, e.target.value, "customer")}
+                                      onFocus={() => { activeCustomerCol.current = c.key; }}
                                       onPaste={isReadOnly || isCalc ? undefined : (e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
                                         const text = e.clipboardData.getData("text");
-                                        processPasteData(text, "customer");
+                                        processPasteData(text, "customer", c.key);
                                       }}
                                       placeholder={isCalc ? "Auto" : "-"}
                                       readOnly={isCalc || isReadOnly}

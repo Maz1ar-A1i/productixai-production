@@ -287,6 +287,15 @@ export default function FormulaBuilder() {
   const expression  = template && canTemplate ? buildExpression(template, selectedCols) : '';
   const sampleResult = expression ? safeEval(expression) : null;
 
+  // Display expression: replace [internalName] with [userRenamedName] for live preview
+  const displayExpression = useMemo(() => {
+    if (!expression) return '';
+    return expression.replace(/\[([^\]]+)\]/g, (_, name) => {
+      const renamed = colMap[name];
+      return renamed && renamed !== name ? `[${renamed}]` : `[${name}]`;
+    });
+  }, [expression, colMap]);
+
   const autoName = template && selectedCols.length >= 2
     ? `${tmplObj?.label || template}: ${selectedCols.slice(0, 2).map(c => colMap[c] || c).join(' & ')}`
     : '';
@@ -675,7 +684,7 @@ export default function FormulaBuilder() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div style={{ padding: '14px 16px', background: 'rgba(0,212,170,0.06)', borderRadius: 10, border: '1px solid var(--border-hover)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--accent)', letterSpacing: '0.02em', lineHeight: 1.6, wordBreak: 'break-all' }}>
-                    {expression}
+                    {displayExpression}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Output type:</span>

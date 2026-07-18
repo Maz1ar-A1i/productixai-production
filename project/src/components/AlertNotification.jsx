@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, AlertTriangle, AlertCircle, Info, CheckCircle, Bell } from 'lucide-react';
 import { alertService } from '../services/api';
 
@@ -14,8 +14,14 @@ const AlertNotification = ({
   duration = 5000,
   showDetails = false 
 }) => {
-  const [isVisible, setIsVisible] = useState(true);
+  const [isVisible, setIsVisible] = useState(false);
   const [expanded, setExpanded] = useState(showDetails);
+
+  // Trigger fade-in on mount
+  useEffect(() => {
+    const enterTimer = setTimeout(() => setIsVisible(true), 10);
+    return () => clearTimeout(enterTimer);
+  }, []);
 
   useEffect(() => {
     if (autoHide && alert.severity !== 'critical') {
@@ -85,10 +91,13 @@ const AlertNotification = ({
 
   const styles = getSeverityStyles();
 
-  if (!isVisible) return null;
-
   return (
-    <div className={`${styles.bg} border rounded-lg shadow-sm transition-all duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
+    <div
+      className={`${styles.bg} border rounded-lg shadow-sm transition-all duration-300 ${
+        isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
+      }`}
+      style={{ transitionProperty: 'opacity, transform' }}
+    >
       <div className="p-4">
         <div className="flex items-start">
           <div className={`flex-shrink-0 ${styles.icon}`}>
@@ -147,43 +156,52 @@ const AlertManager = ({
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [stats, setStats] = useState({ total_alerts: 0, active_alerts: 0, critical_alerts: 0, warning_alerts: 0 });
 
-  useEffect(() => {
-    // Only fetch alerts if user is authenticated
-    const token = localStorage.getItem('token');
-    if (!token) return;
+  // Tracks IDs dismissed this session — persists across re-fetches so they never re-appear
+  const dismissedIds = useRef(new Set());
 
-    fetchAlerts();
-    const interval = setInterval(fetchAlerts, refreshInterval);
-    return () => clearInterval(interval);
-  }, [refreshInterval]);
-
-  const fetchAlerts = async () => {
+  const fetchAlerts = useCallback(async () => {
     try {
       const [alertsResponse, statsResponse] = await Promise.all([
         alertService.getAlerts({ dismissed: false, limit: 10 }),
         alertService.getStats()
       ]);
-      
-      setAlerts(alertsResponse.data);
+      // Filter out anything the user already dismissed this session
+      const fresh = (alertsResponse.data || []).filter(a => !dismissedIds.current.has(a.id));
+      setAlerts(fresh);
       setStats(statsResponse.data);
     } catch (error) {
       console.error('Failed to fetch alerts:', error);
-      // Don't set alerts on error to prevent UI issues
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, refreshInterval);
+    return () => clearInterval(interval);
+  }, [fetchAlerts, refreshInterval]);
 
   const handleDismiss = async (alertId) => {
+    // Mark as dismissed in session ref FIRST — prevents re-appearing on any future fetch
+    dismissedIds.current.add(alertId);
+
+    // Immediately remove from UI
+    const dismissed = alerts.find(a => a.id === alertId);
+    setAlerts(prev => prev.filter(a => a.id !== alertId));
+    setStats(prev => ({
+      ...prev,
+      active_alerts: Math.max(0, prev.active_alerts - 1),
+      critical_alerts: Math.max(0, prev.critical_alerts - (dismissed?.severity === 'critical' ? 1 : 0)),
+      warning_alerts: Math.max(0, prev.warning_alerts - (dismissed?.severity === 'warning' ? 1 : 0))
+    }));
+
+    // Persist to backend (fire-and-forget — UI already updated)
     try {
       await alertService.dismissAlert(alertId);
-      setAlerts(alerts.filter(alert => alert.id !== alertId));
-      setStats(prev => ({
-        ...prev,
-        active_alerts: prev.active_alerts - 1,
-        critical_alerts: prev.critical_alerts - (alerts.find(a => a.id === alertId)?.severity === 'critical' ? 1 : 0),
-        warning_alerts: prev.warning_alerts - (alerts.find(a => a.id === alertId)?.severity === 'warning' ? 1 : 0)
-      }));
     } catch (error) {
-      console.error('Failed to dismiss alert:', error);
+      console.error('Failed to persist alert dismissal on server:', error);
+      // UI stays dismissed because dismissedIds ref still has the ID
     }
   };
 
