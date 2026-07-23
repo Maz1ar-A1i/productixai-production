@@ -16,6 +16,7 @@ import Verify_Result from './pages/verify_result';
 // Admin Pages
 import SuperAdmin from './pages/system_admin';
 import OrgDashboard from './pages/org_admin';
+import Visuals from './pages/Visuals';
 
 // ── Formula Builder Module
 import FormulaBuilder from './pages/FormulaBuilder';
@@ -179,6 +180,11 @@ function App() {
             } />
 
             {/* ── Admin Routes ── */}
+            <Route path="/visuals" element={
+              <ProtectedRoute allowedRoles={['org_admin']}>
+                <Layout><Visuals /></Layout>
+              </ProtectedRoute>
+            } />
             <Route path="/org_admin" element={
               <ProtectedRoute allowedRoles={['org_admin']}>
                 <Layout><OrgDashboard /></Layout>
