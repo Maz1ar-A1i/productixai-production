@@ -123,6 +123,7 @@ async def enforce_client_licensing(request, call_next):
             "/auth/register",
             "/auth/login",
             "/login/login",
+            "/login",
             "/users/update-credentials"
         ]
         

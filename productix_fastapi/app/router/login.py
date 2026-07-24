@@ -11,6 +11,8 @@ from ..auth import verify_password, create_access_token
 router = APIRouter()
 
 @router.post("/login/login", response_model=TokenSchema, summary="User Login with JWT")
+@router.post("/login", response_model=TokenSchema, summary="User Login with JWT")
+@router.post("/login/", response_model=TokenSchema, summary="User Login with JWT")
 async def login(credentials: LoginSchema, db: Session = Depends(get_db)):
     import requests
     import hmac
