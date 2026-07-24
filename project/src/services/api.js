@@ -2,7 +2,14 @@ import axios from 'axios';
 import { jwtDecode } from "jwt-decode";
 
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+let rawBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim();
+if (rawBaseUrl && !rawBaseUrl.startsWith('http://') && !rawBaseUrl.startsWith('https://')) {
+  rawBaseUrl = `https://${rawBaseUrl}`;
+}
+if (rawBaseUrl.endsWith('/')) {
+  rawBaseUrl = rawBaseUrl.slice(0, -1);
+}
+const API_BASE_URL = rawBaseUrl;
 
 // Create axios instance
 const api = axios.create({
