@@ -75,10 +75,11 @@ if env_origins:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,       # Allowed origins
+    allow_origins=origins,
+    allow_origin_regex=r"https://.*\.vercel\.app|https://.*\.techohub\.net|http://localhost:.*|http://127\.0\.0\.1:.*",
     allow_credentials=True,
-    allow_methods=["*"],         # Allow all HTTP methods
-    allow_headers=["*"],         # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 @app.on_event("startup")
