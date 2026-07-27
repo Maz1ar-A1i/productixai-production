@@ -59,3 +59,6 @@ Thumbs.db
 
 .vercel
 .env*
+
+# Vite auto-generated timestamp files
+project/vite.config.js.timestamp-*
