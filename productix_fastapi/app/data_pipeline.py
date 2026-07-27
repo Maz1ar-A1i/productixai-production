@@ -122,19 +122,22 @@ def normalize_from_manual_entry(
     """
     Convert UnitDataEntry's unit_rows + customer_rows (from the frontend)
     into a list of canonical records, one per unique Date.
-
-    CHANGED: This replaces the localStorage-only save path.  The frontend
-    now POSTs these rows to /data-records/bulk and this function normalises
-    them before DB insertion.
     """
     col_map = col_map or {}
     records_by_date: Dict[str, Dict[str, Any]] = {}
+    default_date = datetime.now().strftime("%Y-%m-%d")
+
+    def clean_date_str(val: Any) -> str:
+        s = str(val or "").strip()
+        if not s or s == "undefined" or s == "null":
+            return default_date
+        if "T" in s:
+            s = s.split("T")[0]
+        return s
 
     # Process unit rows
     for row in unit_rows:
-        date_val = str(row.get("Date", "")).strip()
-        if not date_val:
-            continue
+        date_val = clean_date_str(row.get("Date"))
 
         if date_val not in records_by_date:
             records_by_date[date_val] = {
@@ -153,9 +156,7 @@ def normalize_from_manual_entry(
         for key, value in row.items():
             if key in ("Date", "id"):
                 continue
-            # Strip the 'unit_' prefix from key names used in the frontend
             clean_key = key.replace("unit_", "")
-            # Apply column rename map
             display_name = col_map.get(clean_key, clean_key)
             try:
                 rec["unit_data"][display_name] = float(value) if value not in (None, "", "nan") else 0.0
@@ -164,13 +165,24 @@ def normalize_from_manual_entry(
 
     # Process customer rows
     for row in customer_rows:
-        date_val = str(row.get("Date", "")).strip()
-        if not date_val or date_val not in records_by_date:
-            continue
+        date_val = clean_date_str(row.get("Date"))
 
         customer_name = str(row.get("Customer", "")).strip()
         if not customer_name:
             continue
+
+        if date_val not in records_by_date:
+            records_by_date[date_val] = {
+                "parameters": {
+                    "date": date_val,
+                    "towerName": tower_name,
+                    "city": city,
+                    "region": region or city,
+                },
+                "unit_data": {},
+                "customer_data": [],
+                "computed": {},
+            }
 
         entry: Dict[str, Any] = {"name": customer_name}
         for key, value in row.items():

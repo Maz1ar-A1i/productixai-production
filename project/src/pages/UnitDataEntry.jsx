@@ -409,6 +409,15 @@ const UnitDataEntry = () => {
               cRows.push(cRow);
             });
           });
+
+          // Clean up stale localStorage draft since DB is authoritative
+          try {
+            const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
+            if (allData[id]) {
+              delete allData[id];
+              localStorage.setItem("telco_unit_data_v2", JSON.stringify(allData));
+            }
+          } catch (e) {}
           
           const finalURows = uRows.length > 0 ? uRows : [createEmptyRow(uniCols)];
           const finalCRows = cRows.length > 0 ? cRows : [createEmptyRow(custCols)];
@@ -679,7 +688,20 @@ const UnitDataEntry = () => {
         col_map: colMap
       };
 
-      await dataRecordService.bulkCreate(payload);
+      const res = await dataRecordService.bulkCreate(payload);
+      const savedProductId = res?.data?.product_id;
+
+      // Clean up localStorage draft once successfully saved to DB
+      try {
+        const allData = JSON.parse(localStorage.getItem("telco_unit_data_v2") || "{}");
+        delete allData[selectedUnitId];
+        if (savedProductId) delete allData[savedProductId];
+        localStorage.setItem("telco_unit_data_v2", JSON.stringify(allData));
+      } catch (e) {}
+
+      if (savedProductId && String(selectedUnitId) !== String(savedProductId)) {
+        setSelectedUnitId(savedProductId);
+      }
 
       showMsg("success", "Data saved successfully to database!");
       setShowValidation(false);

@@ -101,10 +101,11 @@ const AIAnalysisPage = () => {
         try {
           const res = await api.get('/data-records/', { params: { product_id: selectedProduct } });
           const backendRecords = res.data || [];
-          const backendMonths = new Set(backendRecords.map(r => r.month));
-          
-          const uniqueLocal = localRecords.filter(lr => !backendMonths.has(lr.month));
-          setRecords([...backendRecords, ...uniqueLocal]);
+          if (backendRecords.length > 0) {
+            setRecords(backendRecords);
+          } else {
+            setRecords(localRecords);
+          }
         } catch {
           setError("Failed to load data records for this product");
           setRecords(localRecords);

@@ -135,7 +135,7 @@ def save_bulk_records(
     records_updated = 0
 
     for rec_data in normalized_records:
-        date_val = rec_data["parameters"]["date"]
+        date_val = str(rec_data["parameters"]["date"]).split("T")[0].strip()
         
         # Check if record exists for this Product and Date
         existing_record = db.query(models.ProductDataRecord).filter(
@@ -162,7 +162,8 @@ def save_bulk_records(
         "success": True,
         "message": f"Successfully saved manual data: {records_created} created, {records_updated} updated.",
         "records_created": records_created,
-        "records_updated": records_updated
+        "records_updated": records_updated,
+        "product_id": product.id
     }
 
 

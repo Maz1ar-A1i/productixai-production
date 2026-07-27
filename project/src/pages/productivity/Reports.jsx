@@ -101,12 +101,11 @@ const Reports = () => {
         api.get('/data-records/', { params: { product_id: selectedProduct } })
           .then((res) => {
             const backendRecords = res.data || [];
-            const backendMonths = new Set(backendRecords.map(r => r.month));
-            
-            // Filter local records to avoid overlapping dates
-            const uniqueLocal = localRecords.filter(lr => !backendMonths.has(lr.month));
-            
-            setRecords([...backendRecords, ...uniqueLocal]);
+            if (backendRecords.length > 0) {
+              setRecords(backendRecords);
+            } else {
+              setRecords(localRecords);
+            }
           })
           .catch((err) => {
             console.error(err);
