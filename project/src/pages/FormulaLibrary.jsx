@@ -47,6 +47,20 @@ const Toast = ({ msg, type, onDismiss }) => {
   );
 };
 
+// ── Translate expression tokens using colMap ─────────────────────────────────
+// Replaces [OriginalName] with [RenamedName] in an expression string.
+function applyColMapToExpression(expr, colMap) {
+  if (!expr || !colMap || Object.keys(colMap).length === 0) return expr;
+  let result = expr;
+  Object.entries(colMap).forEach(([original, renamed]) => {
+    if (original !== renamed) {
+      const escaped = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      result = result.replace(new RegExp(`\\[${escaped}\\]`, 'g'), `[${renamed}]`);
+    }
+  });
+  return result;
+}
+
 // ── Sort helper ────────────────────────────────────────────────────────────────
 function sortFormulas(list, col, dir) {
   return [...list].sort((a, b) => {
@@ -228,8 +242,11 @@ export default function FormulaLibrary() {
                     >
                       <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{f.formula_name}</td>
                       <td style={{ padding: '12px 14px', maxWidth: 280 }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f.expression_string}>
-                          {f.expression_string}
+                        <span
+                          style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={applyColMapToExpression(f.expression_string, colMap)}
+                        >
+                          {applyColMapToExpression(f.expression_string, colMap)}
                         </span>
                       </td>
                       <td style={{ padding: '12px 14px' }}>

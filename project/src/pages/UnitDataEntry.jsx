@@ -292,6 +292,34 @@ const UnitDataEntry = () => {
       .catch(err => console.error("Failed to load formulas", err));
   }, [userRole]);
 
+  // ── Re-run formula calculations whenever formulas finish loading ──────────────
+  // Fixes the race condition where formulas arrive after data is already rendered,
+  // leaving all formula-target columns blank.
+  useEffect(() => {
+    if (formulas.length === 0 || unitColumns.length === 0) return;
+    setUnitRows(prev => {
+      if (prev.length === 0) return prev;
+      // Only recalculate if there is actual data (skip empty placeholder rows)
+      const hasData = prev.some(r =>
+        Object.entries(r).some(([k, v]) => k !== 'id' && k !== 'Date' && v !== '' && v !== null && v !== undefined)
+      );
+      if (!hasData) return prev;
+      const recalculated = prev.map(r =>
+        runCalculations(r, "unit", formulas, prev, unitColumns, customerColumns)
+      );
+      // Also re-run customer formulas using the freshly calculated unit rows
+      setCustomerRows(cPrev => {
+        if (cPrev.length === 0) return cPrev;
+        return cPrev.map(r =>
+          runCalculations(r, "customer", formulas, recalculated, unitColumns, customerColumns)
+        );
+      });
+      return recalculated;
+    });
+  }, [formulas]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
+
   // Load units whenever selectedUserId changes
   useEffect(() => {
     let fetchPromise;

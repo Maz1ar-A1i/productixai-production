@@ -146,6 +146,8 @@ def save_bulk_records(
 
         if existing_record:
             existing_record.data = rec_data
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(existing_record, 'data')
             records_updated += 1
         else:
             record = models.ProductDataRecord(

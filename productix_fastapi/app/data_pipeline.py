@@ -159,9 +159,14 @@ def normalize_from_manual_entry(
             clean_key = key.replace("unit_", "")
             display_name = col_map.get(clean_key, clean_key)
             try:
-                rec["unit_data"][display_name] = float(value) if value not in (None, "", "nan") else 0.0
+                numeric_val = float(value) if value not in (None, "", "nan") else 0.0
             except (ValueError, TypeError):
-                rec["unit_data"][display_name] = 0.0
+                numeric_val = 0.0
+            rec["unit_data"][display_name] = numeric_val
+            # Also store under the original key as a fallback so the frontend can
+            # reconstruct data correctly even when colMap hasn't loaded yet.
+            if display_name != clean_key:
+                rec["unit_data"][clean_key] = numeric_val
 
     # Process customer rows
     for row in customer_rows:
@@ -191,9 +196,13 @@ def normalize_from_manual_entry(
             clean_key = key.replace("customer_", "")
             display_name = col_map.get(clean_key, clean_key)
             try:
-                entry[display_name] = float(value) if value not in (None, "", "nan") else 0.0
+                numeric_val = float(value) if value not in (None, "", "nan") else 0.0
             except (ValueError, TypeError):
-                entry[display_name] = 0.0
+                numeric_val = 0.0
+            entry[display_name] = numeric_val
+            # Same dual-key pattern: store under original name as fallback.
+            if display_name != clean_key:
+                entry[clean_key] = numeric_val
 
         records_by_date[date_val]["customer_data"].append(entry)
 
