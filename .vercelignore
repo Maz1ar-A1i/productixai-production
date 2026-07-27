@@ -1,0 +1,27 @@
+# Ignore virtual environments
+**/venv/
+**/.venv/
+**/env/
+**/.env/
+
+# Ignore node_modules
+**/node_modules/
+
+# Ignore local builds
+**/dist/
+**/.next/
+**/.vercel/
+
+# Ignore databases and caches
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.cache
+**/*.log
+
+# Ignore backend and licensing directories
+productix_fastapi/
+licensing-server/
+*.py
+*.bat
+*.sh

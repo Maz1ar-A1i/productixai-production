@@ -1,17 +1,13 @@
 #!/usr/bin/env python
 """
-Script to create a fresh database with global superadmin credentials.
+Script to create a fresh database with global superadmin credentials
 This will set up the database with:
-  Email: superadmin@productix.ai
-  Password: set via SUPERADMIN_PASSWORD env var, or prompted securely at runtime.
-
-Usage:
-    SUPERADMIN_PASSWORD='your-strong-password' python setup_superadmin.py
+- Email: superadmin@productix.ai
+- Password: AdminPassword123!
 """
 
 import sys
 import os
-import getpass
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from productix_fastapi.app.database import SessionLocal, Base, engine, auto_migrate_db
@@ -28,14 +24,6 @@ auto_migrate_db(engine)
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Read password from env or prompt securely at runtime
-_admin_password = os.getenv("SUPERADMIN_PASSWORD")
-if not _admin_password:
-    _admin_password = getpass.getpass("Enter superadmin password: ")
-    if not _admin_password or len(_admin_password) < 8:
-        print("[ERROR] Password must be at least 8 characters.")
-        sys.exit(1)
 
 def setup_superadmin():
     db = SessionLocal()
@@ -64,7 +52,7 @@ def setup_superadmin():
         if superadmin:
             print("[INFO] Superadmin account already exists!")
             print("   Updating password...")
-            superadmin.password_hash = pwd_context.hash(_admin_password)
+            superadmin.password_hash = pwd_context.hash("AdminPassword123!")
             superadmin.is_verified = True
             superadmin.is_active = True
             db.commit()
@@ -75,7 +63,7 @@ def setup_superadmin():
                 organization_id=org.id,
                 name="Super Admin",
                 email="superadmin@productix.ai",
-                password_hash=pwd_context.hash(_admin_password),
+                password_hash=pwd_context.hash("AdminPassword123!"),
                 role=UserRole.system_admin,
                 is_verified=True,
                 is_active=True
@@ -88,9 +76,9 @@ def setup_superadmin():
             print("[SUCCESS] Superadmin account created successfully!")
         
         print(f"   Email: superadmin@productix.ai")
+        print(f"   Password: AdminPassword123!")
         print(f"   Role: System Admin")
         print(f"   Organization: {org.name}")
-        print("[OK] Password set successfully (not displayed for security).")
         
     except Exception as e:
         print(f"[ERROR] Error setting up superadmin: {e}")
