@@ -86,8 +86,26 @@ app.add_middleware(
 async def startup_event():
     import os
     if os.getenv("PRODUCTIX_ENFORCE_CLIENT_LICENSING", "true").lower() == "true":
-        from .client_license_manager import check_license_status, start_periodic_license_polling
+        from .client_license_manager import (
+            check_license_status, start_periodic_license_polling,
+            read_encrypted_cache, get_cache_file_path
+        )
         print("[*] Client-side licensing enforcement active. Performing startup check...")
+
+        # ── Cache migration: delete stale cache encrypted with old MAC-address-based key ──
+        # In a previous version, derive_fernet_key() used uuid.getnode() (MAC address).
+        # After the fix it uses a fixed app secret.  If the old cache file exists but
+        # can't be decrypted with the new key, remove it so we rebuild cleanly from DB.
+        cache_path = get_cache_file_path()
+        if cache_path.exists():
+            decoded_cache = read_encrypted_cache()
+            if decoded_cache is None:
+                try:
+                    cache_path.unlink()
+                    print("[*] Removed stale/unreadable license cache (key migration). Will rebuild from DB on first request.")
+                except Exception as ex:
+                    print(f"[!] Could not remove stale cache file: {ex}")
+
         check_license_status()
         start_periodic_license_polling()
 

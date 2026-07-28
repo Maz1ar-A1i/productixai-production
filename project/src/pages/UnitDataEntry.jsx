@@ -177,6 +177,18 @@ const UnitDataEntry = () => {
   const [showAllFormulas, setShowAllFormulas] = useState(true);
   const [visibleFormulaIds, setVisibleFormulaIds] = useState([]);
 
+  // Sanitize a cell value coming from Excel (or any source) before converting to Number.
+  // Excel copies numbers with thousands separators ("1,234"), currency symbols ("$"),
+  // percent signs ("%"), and extra spaces — all of which make Number() return NaN.
+  const sanitizeNumber = (val) => {
+    if (val === null || val === undefined || val === "") return 0;
+    const str = String(val).trim();
+    // Remove currency symbols, percent, commas (thousands separator), and surrounding quotes
+    const cleaned = str.replace(/[$€£¥%,\s'"]/g, "");
+    const num = Number(cleaned);
+    return isNaN(num) ? 0 : num;
+  };
+
   const runCalculations = (row, type, formulasList = formulas, uRows = unitRows, uCols = unitColumns, cCols = customerColumns) => {
     const updatedRow = { ...row };
     const cols = type === "unit" ? uCols : cCols;
@@ -188,7 +200,8 @@ const UnitDataEntry = () => {
     const buildContext = (colList, dataRow) => {
       colList.forEach(c => {
         if (c.key === "Date" || c.key === "Customer") return;
-        const val = Number(dataRow[c.key] || 0);
+        // Use sanitizeNumber to handle Excel-formatted values (commas, currency symbols, etc.)
+        const val = sanitizeNumber(dataRow[c.key]);
         // Key 1: display label (may be renamed)
         context[c.label] = val;
         // Key 2: original variable name extracted from key (e.g. 'unit_Fuel Cost' → 'Fuel Cost')
@@ -597,7 +610,14 @@ const UnitDataEntry = () => {
 
       const values = lines.map(line => {
         let val = line.trim().replace(/\r/g, "");
-        if (colDef.type === "date") val = normalizeDate(val);
+        if (colDef.type === "date") {
+          val = normalizeDate(val);
+        } else {
+          // Sanitize Excel-formatted numbers (commas, currency symbols, etc.)
+          // Store as string representation of the clean number so the cell displays correctly
+          const cleaned = val.replace(/[$€£¥%,\s'"]/g, "");
+          if (cleaned !== "" && !isNaN(Number(cleaned))) val = cleaned;
+        }
         return val;
       });
 
@@ -641,7 +661,13 @@ const UnitDataEntry = () => {
       const row = { id: `paste_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 9)}` };
       cols.forEach((c, i) => {
         let val = values[i] !== undefined ? values[i] : "";
-        if (c.type === "date") val = normalizeDate(val);
+        if (c.type === "date") {
+          val = normalizeDate(val);
+        } else {
+          // Sanitize Excel-formatted numbers (commas, currency symbols, etc.) for row-wise paste
+          const cleaned = String(val).replace(/[$€£¥%,\s'"]/g, "");
+          if (cleaned !== "" && !isNaN(Number(cleaned))) val = cleaned;
+        }
         row[c.key] = val;
       });
       return row;

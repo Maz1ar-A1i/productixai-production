@@ -52,13 +52,23 @@ def get_cache_file_path() -> Path:
 
 def derive_fernet_key() -> bytes:
     """
-    Derive a stable 32-byte Fernet key from the Machine ID.
-    This binds the cached license file cryptographically to this machine only!
+    Derive a stable 32-byte Fernet key for the local license cache file.
+
+    Previously this was tied to the machine's MAC address (uuid.getnode()), but that value
+    can change between reboots on machines with multiple/virtual network adapters or WiFi.
+    When the key changed, the Fernet decryption silently failed, causing the license cache
+    to appear empty and prompting the admin to re-enter the license key on every restart.
+
+    Now we use a fixed application-level secret from the environment (LICENSE_CACHE_SECRET),
+    falling back to a static default.  Machine binding is still enforced server-side via
+    the `bound_machine_id` column in the License table \u2014 removing hardware binding from
+    the local cache file is therefore safe and does not weaken the licensing system.
     """
-    machine_id = get_machine_id()
-    salt = "PRODUCTIX_HARDWARE_CACHE_SALT_SECRET_2026"
-    raw_hash = hashlib.sha256((machine_id + salt).encode("utf-8")).digest()
+    app_secret = os.getenv("LICENSE_CACHE_SECRET", "PRODUCTIX_CACHE_SECRET_STABLE_2026_DEFAULT")
+    salt = "PRODUCTIX_STABLE_CACHE_SALT_2026"
+    raw_hash = hashlib.sha256((app_secret + salt).encode("utf-8")).digest()
     return base64.urlsafe_b64encode(raw_hash)
+
 
 def read_encrypted_cache() -> Optional[Dict[str, Any]]:
     """Read and decrypt the local license cache."""

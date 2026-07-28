@@ -118,6 +118,34 @@ def get_local_status(
                             hours_left = max(0.0, time_left.total_seconds() / 3600.0)
                         else:
                             hours_left = 99999.0
+
+                        # ── Always refresh the encrypted cache when we confirm an active license
+                        # from the database.  After a server restart, in-memory state resets to
+                        # UNLICENSED and the old cache (if any) may be unreadable.  Writing a
+                        # fresh cache here ensures the next request (and the polling timer) can
+                        # confirm the license from cache without hitting the central server.
+                        from ..client_license_manager import write_encrypted_cache
+                        import datetime as _dt
+                        _now = _dt.datetime.utcnow()
+                        _fresh_cache = {
+                            "license_key": license_key,
+                            "last_validated": _now.isoformat(),
+                            "max_seen_time": _now.isoformat(),
+                            "expires_at": expires_at,
+                            "cached_status": "active"
+                        }
+                        write_encrypted_cache(_fresh_cache)
+
+                        # Also sync in-memory global state so the background polling thread
+                        # reflects the correct status immediately after server startup.
+                        from .. import client_license_manager as _clm
+                        with _clm.state_lock:
+                            _clm.IS_LICENSED = True
+                            _clm.LICENSE_BLOCK_REASON = "ACTIVE"
+                            _clm.LICENSE_KEY = license_key
+                            _clm.EXPIRES_AT = expires_at
+                            _clm.HOURS_LEFT = hours_left
+
                     else:
                         # Check if any expired/revoked license exists to get the reason
                         any_lic = db.query(License).filter(
@@ -129,6 +157,7 @@ def get_local_status(
                             expires_at = any_lic.expires_at.isoformat() if any_lic.expires_at else None
                         else:
                             reason = "UNLICENSED"
+
 
     return LocalStatusResponse(
         valid=valid,
