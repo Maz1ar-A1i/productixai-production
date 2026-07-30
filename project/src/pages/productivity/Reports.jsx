@@ -229,12 +229,18 @@ const Reports = () => {
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-slate-800/80 backdrop-blur-sm border border-white/10 rounded-xl p-3 text-sm shadow-lg">
-          <p className="label text-white/80">{`${label}`}</p>
+        <div className="bg-slate-900/90 backdrop-blur-md border border-purple-500/30 rounded-xl p-3 text-xs shadow-2xl shadow-purple-950/50 min-w-[150px]">
+          <p className="font-semibold text-purple-300 pb-1.5 mb-1.5 border-b border-white/10">{`${label}`}</p>
           {payload.map((pld, index) => (
-            <p key={index} style={{ color: pld.color }}>
-              {`${pld.name}: ${Number(pld.value).toLocaleString()}`}
-            </p>
+            <div key={index} className="flex items-center justify-between gap-3 my-1">
+              <span className="flex items-center gap-1.5 text-white/80">
+                <span className="w-2 h-2 rounded-full inline-block" style={{ background: pld.color, boxShadow: `0 0 6px ${pld.color}` }} />
+                {pld.name}
+              </span>
+              <span className="font-mono font-bold text-white">
+                {Number(pld.value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+            </div>
           ))}
         </div>
       );
@@ -478,43 +484,44 @@ const Reports = () => {
             {trendData.length > 0 && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Output & Cost */}
-                <div className="bg-white/5 rounded-2xl border border-white/10 p-6 h-96">
-                  <h3 className="text-xl font-semibold text-white mb-4">
-                    <BarChartIcon className="w-6 h-6 inline text-blue-400 mr-2" />
+                <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/10 p-6 h-96 shadow-2xl">
+                  <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
+                    <BarChartIcon className="w-5 h-5 inline text-blue-400 mr-2" />
                     Output & Cost / Shift
                   </h3>
-                  <ResponsiveContainer width="100%" height="90%">
+                  <ResponsiveContainer width="100%" height="85%">
                     <BarChart data={trendData}>
-                      <CartesianGrid stroke="rgba(255,255,255,0.1)" />
-                      <XAxis dataKey="shift" />
-                      <YAxis />
+                      <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" />
+                      <XAxis dataKey="shift" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} />
                       <Tooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Bar dataKey="output_units" name="Output Units" fill="#a855f7" />
-                      <Bar dataKey="total_cost" name="Total Cost" fill="#34d399" />
+                      <Legend wrapperStyle={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }} />
+                      <Bar dataKey="output_units" name="Output Units" fill="#a855f7" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="total_cost" name="Total Cost" fill="#00f2fe" radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
 
                 {/* Productivity */}
-                <div className="bg-white/5 rounded-2xl border border-white/10 p-6 h-96">
-                  <h3 className="text-xl font-semibold text-white mb-4">
-                    <LineChartIcon className="w-6 h-6 inline text-yellow-400 mr-2" />
+                <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-white/10 p-6 h-96 shadow-2xl">
+                  <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
+                    <LineChartIcon className="w-6 h-6 inline text-amber-400 mr-2" />
                     Productivity Ratio / Shift
                   </h3>
-                  <ResponsiveContainer width="100%" height="90%">
+                  <ResponsiveContainer width="100%" height="85%">
                     <LineChart data={trendData}>
-                      <CartesianGrid stroke="rgba(255,255,255,0.1)" />
-                      <XAxis dataKey="shift" />
-                      <YAxis />
+                      <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" />
+                      <XAxis dataKey="shift" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} />
                       <Tooltip content={<CustomTooltip />} />
-                      <Legend />
+                      <Legend wrapperStyle={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }} />
                       <Line
                         type="monotone"
                         dataKey="productivity_ratio"
-                        stroke="#facc15"
-                        strokeWidth={2}
-                        dot
+                        stroke="#f59e0b"
+                        strokeWidth={3}
+                        dot={{ r: 4, fill: "#f59e0b" }}
+                        activeDot={{ r: 7, stroke: "#fff", strokeWidth: 2 }}
                       />
                     </LineChart>
                   </ResponsiveContainer>

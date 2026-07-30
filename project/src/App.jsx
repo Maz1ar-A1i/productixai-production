@@ -179,9 +179,9 @@ function App() {
               </ProtectedRoute>
             } />
 
-            {/* ── Admin Routes ── */}
+            {/* ── Visuals & Admin Routes ── */}
             <Route path="/visuals" element={
-              <ProtectedRoute allowedRoles={['org_admin']}>
+              <ProtectedRoute allowedRoles={['org_admin', 'org_user', 'system_admin']}>
                 <Layout><Visuals /></Layout>
               </ProtectedRoute>
             } />

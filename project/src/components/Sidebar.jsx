@@ -175,6 +175,7 @@ const Sidebar = () => {
           </SubMenu>
 
           <NavItem to="/kpi" icon={Target} label="KPI Dashboard" />
+          <NavItem to="/visuals" icon={TrendingUp} label="Visual Analytics" />
 
           {role !== "org_admin" && (
             <>
@@ -225,7 +226,6 @@ const Sidebar = () => {
             <>
               <SectionLabel label="Admin" />
               {role === "org_admin" && <NavItem to="/org_admin" icon={Users} label="Org Admin" />}
-              {role === "org_admin" && <NavItem to="/visuals" icon={TrendingUp} label="Visuals" />}
               {role === "system_admin" && <NavItem to="/system_admin" icon={Settings} label="System Admin" />}
             </>
           )}
