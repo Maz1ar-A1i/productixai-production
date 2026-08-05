@@ -244,34 +244,137 @@ export const formulaService = {
   },
 };
 
-// KPI Dashboard services
+// PHP Licensing / KPI Server Base URL
+const PHP_KPI_BASE_URL = (import.meta.env.VITE_PHP_KPI_URL || 'https://license.techohub.net/kpi_dashboard/api').replace(/\/+$/, '');
+
+// KPI Dashboard services — Connected to PHP KPI Engine Server with offline fallback
 export const kpiService = {
   // Dashboard endpoint (all KPIs with latest values + sparklines)
-  getDashboard: (filters = {}) => {
-    const params = {};
-    if (filters.category) params.category = filters.category;
-    if (filters.product_id) params.product_id = filters.product_id;
-    return api.get('/kpi/dashboard', { params });
+  getDashboard: async (filters = {}) => {
+    try {
+      const params = new URLSearchParams(filters).toString();
+      const url = `${PHP_KPI_BASE_URL}/dashboard.php${params ? '?' + params : ''}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      localStorage.setItem('cached_kpi_dashboard', JSON.stringify(data));
+      return { data };
+    } catch (err) {
+      console.warn("KPI Server offline or unreachable. Loading cached metrics:", err);
+      const cached = localStorage.getItem('cached_kpi_dashboard');
+      if (cached) {
+        return { data: JSON.parse(cached) };
+      }
+      return { data: { summary: [], kpis: [] } };
+    }
   },
 
   // CRUD for KPI definitions
-  listDefinitions: () => api.get('/kpi/definitions'),
-  createDefinition: (data) => api.post('/kpi/definitions', data),
-  updateDefinition: (id, data) => api.put(`/kpi/definitions/${id}`, data),
-  deleteDefinition: (id) => api.delete(`/kpi/definitions/${id}`),
+  listDefinitions: async () => {
+    try {
+      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      localStorage.setItem('cached_kpi_definitions', JSON.stringify(data));
+      return { data: data.data || [] };
+    } catch (err) {
+      console.warn("KPI definitions fetch offline:", err);
+      const cached = localStorage.getItem('cached_kpi_definitions');
+      return { data: cached ? (JSON.parse(cached).data || []) : [] };
+    }
+  },
+
+  createDefinition: async (kpiData) => {
+    try {
+      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(kpiData)
+      });
+      return { data: await response.json() };
+    } catch (err) {
+      console.error("Failed to create KPI definition on PHP server:", err);
+      throw err;
+    }
+  },
+
+  updateDefinition: async (id, kpiData) => {
+    try {
+      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php?id=${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(kpiData)
+      });
+      return { data: await response.json() };
+    } catch (err) {
+      console.error("Failed to update KPI definition on PHP server:", err);
+      throw err;
+    }
+  },
+
+  deleteDefinition: async (id) => {
+    try {
+      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php?id=${id}`, {
+        method: 'DELETE'
+      });
+      return { data: await response.json() };
+    } catch (err) {
+      console.error("Failed to delete KPI definition:", err);
+      throw err;
+    }
+  },
 
   // Built-in KPI templates
-  getBuiltInTemplates: () => api.get('/kpi/definitions/built-in'),
+  getBuiltInTemplates: async () => {
+    return {
+      data: [
+        { key: 'revenue_growth', name: 'Revenue Growth Rate', unit: '%', category: 'financial', description: 'Month-over-month revenue growth' },
+        { key: 'customer_churn', name: 'Customer Churn Rate', unit: '%', category: 'operational', description: 'Percentage of lost customers' },
+        { key: 'active_users', name: 'Monthly Active Users', unit: 'users', category: 'operational', description: 'Active user count per month' },
+        { key: 'profit_margin', name: 'Net Profit Margin', unit: '%', category: 'financial', description: 'Net profit percentage of total revenue' }
+      ]
+    };
+  },
 
   // Computation
-  computeAll: () => api.post('/kpi/compute'),
+  computeAll: async () => {
+    try {
+      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_compute.php`, { method: 'POST' });
+      return { data: await response.json() };
+    } catch (err) {
+      console.warn("KPI compute trigger failed or offline:", err);
+      return { data: { status: 'offline' } };
+    }
+  },
 
   // History
-  getHistory: (id, limit = 12) => api.get(`/kpi/${id}/history`, { params: { limit } }),
+  getHistory: async (id, limit = 12) => {
+    try {
+      const response = await fetch(`${PHP_KPI_BASE_URL}/dashboard.php?kpi_id=${id}&limit=${limit}`);
+      const data = await response.json();
+      return { data };
+    } catch (err) {
+      return { data: [] };
+    }
+  },
 
   // Promote formula to KPI
-  promoteFormula: (formulaId, params = {}) =>
-    api.post(`/kpi/from-formula/${formulaId}`, null, { params }),
+  promoteFormula: async (formulaId, params = {}) => {
+    try {
+      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ formula_id: formulaId, ...params })
+      });
+      return { data: await response.json() };
+    } catch (err) {
+      console.error("Failed to promote formula to KPI:", err);
+      throw err;
+    }
+  },
 };
 
 export default api;
