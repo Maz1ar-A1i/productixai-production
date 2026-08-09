@@ -57,8 +57,10 @@ const Login = () => {
 
       if (role === "system_admin") {
         navigate("/system_admin", { replace: true });
+      } else if (role === "org_admin") {
+        navigate("/org_admin", { replace: true });
       } else {
-        navigate("/feed", { replace: true }); // updated default to feed
+        navigate("/kpi", { replace: true });
       }
 
     } catch (err) {

@@ -54,7 +54,9 @@ export const LicenseContext = createContext(null);
 // Public route guard (redirect if already logged in)
 const PublicRoute = ({ children }) => {
   const isAuthenticated = authService.isAuthenticated();
-  return isAuthenticated ? <Navigate to="/feed" replace /> : children;
+  const role = authService.getRole();
+  const defaultPath = role === 'system_admin' ? '/system_admin' : role === 'org_admin' ? '/org_admin' : '/kpi';
+  return isAuthenticated ? <Navigate to={defaultPath} replace /> : children;
 };
 
 // Wrapped protected route with layout
@@ -197,7 +199,7 @@ function App() {
             } />
 
             {/* ── Catch All ── */}
-            <Route path="*" element={<Navigate to="/feed" replace />} />
+            <Route path="*" element={<Navigate to="/kpi" replace />} />
           </Routes>
         </div>
       </Router>

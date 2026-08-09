@@ -130,16 +130,7 @@ const Sidebar = () => {
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto p-3 flex flex-col gap-0.5">
 
-          {role !== "org_admin" && role !== "system_admin" && (
-            <>
-              <SectionLabel label="Co-Pilot" />
-              <NavItem to="/feed" icon={Home} label="Home Feed" exact />
-              <NavItem to="/agents" icon={Zap} label="AI Agents" />
-              <NavItem to="/voice" icon={Mic} label="Voice" />
-              <NavItem to="/goals" icon={BarChart3} label="Goals" />
-              <NavItem to="/auto-mode" icon={Settings} label="Auto Mode" />
-            </>
-          )}
+
 
           {role !== "org_admin" && (
             <>
