@@ -141,9 +141,26 @@ const Sidebar = () => {
                 isOpen={pluginsOpen}
                 onToggle={() => setPluginsOpen(!pluginsOpen)}
               >
-                <NavItem to="/plugins/telco" icon={Users} label="Hr Productivity" />
-                <NavItem to="/plugins/energy" icon={Zap} label="Energy productivity" />
-                <NavItem to="/plugins/revenue" icon={DollarSign} label="Revenue productivity" />
+                <a
+                  href="https://productix-recipe.vercel.app/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="nav-item"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <ShoppingCart size={16} strokeWidth={2} />
+                  <span className="flex-1">Productix Recipe</span>
+                </a>
+                <a
+                  href="https://docinsight.techohub.net/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="nav-item"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <FileText size={16} strokeWidth={2} />
+                  <span className="flex-1">DocInsight</span>
+                </a>
               </SubMenu>
             </>
           )}
