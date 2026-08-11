@@ -5,19 +5,36 @@ import { LicenseContext } from '../App';
 import LockScreen from './LockScreen';
 import ChangeCredentials from './ChangeCredentials';
 
+// These reasons represent a definitive, persistent license problem that must be
+// shown to the user even after the initial license-binding step is complete.
+// "UNLICENSED" is intentionally excluded — it is only valid during first-time
+// setup (when no license has been bound yet), not as a runtime blocking reason.
+const BLOCKING_LICENSE_REASONS = new Set([
+  'REVOKED',
+  'EXPIRED',
+  'OFFLINE_TIMEOUT',
+  'SYSTEM_SUSPENDED',
+  'TIME_TAMPERING',
+  'MACHINE_MISMATCH',
+  'SIGNATURE_SPOOFED',
+]);
+
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const token = localStorage.getItem('token');
   const userRole = authService.getRole();
   const license = useContext(LicenseContext);
 
   const requiresPasswordChange = localStorage.getItem('requires_password_change') === 'true';
-  const pendingLicenseRegistration = localStorage.getItem('pending_license_registration') === 'true';
 
   // 1. Must be authenticated
   if (!token) return <Navigate to="/login" replace />;
 
-  // 2. System admin bypasses all checks
+  // 2. System admin bypasses all license checks
   if (userRole === 'system_admin') {
+    // Still enforce role-based access for system_admin routes
+    if (allowedRoles && !allowedRoles.includes(userRole)) {
+      return <Navigate to="/system_admin" replace />;
+    }
     return children;
   }
 
@@ -26,9 +43,12 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     return <ChangeCredentials />;
   }
 
-  // 4. After credential update, user must register their license key
-  //    This step is mandatory for new accounts so that the key is bound to the account.
-  if (pendingLicenseRegistration) {
+  // 4. License OTP gate — only shown once, on first account setup.
+  //    The `license_bound` flag comes from the login response and is persisted to
+  //    localStorage. It is `false` only when the server confirmed that no active
+  //    license is yet associated with this organization.
+  const licenseBound = authService.isLicenseBound();
+  if (!licenseBound) {
     return (
       <LockScreen
         status={{
@@ -37,8 +57,9 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
           machineId: license?.licenseStatus?.machineId || '...'
         }}
         onUnlock={() => {
-          // Clear the pending flag and refresh the license context
-          localStorage.removeItem('pending_license_registration');
+          // Mark license as bound locally so we never ask again for this session.
+          // The next login will re-validate from the server.
+          localStorage.setItem('license_bound', 'true');
           if (license?.refreshLicense) {
             license.refreshLicense();
           }
@@ -47,11 +68,14 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     );
   }
 
-  // 5. License must be valid for org users
-  if (license && license.licenseStatus && !license.licenseStatus.valid) {
+  // 5. Runtime license gate — only block on permanent, definitive failure reasons.
+  //    We intentionally ignore transient 'UNLICENSED' and 'CONNECTION_ERROR' states
+  //    that can appear briefly after a backend restart while the cache is being read.
+  const licStatus = license?.licenseStatus;
+  if (licStatus && !licStatus.valid && BLOCKING_LICENSE_REASONS.has(licStatus.reason)) {
     return (
       <LockScreen
-        status={license.licenseStatus}
+        status={licStatus}
         onUnlock={() => {
           license.refreshLicense();
         }}

@@ -16,6 +16,7 @@ class TokenSchema(BaseModel):
     access_token: str
     token_type: str = "bearer"
     requires_password_change: bool = False
+    license_bound: bool = True  # True if a valid license is already bound to this org
 # ------------------------
 # AUTH
 # ------------------------

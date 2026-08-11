@@ -51,13 +51,15 @@ const ChangeCredentials = () => {
 
       setSuccessMsg('Credentials updated! Setting up your license key...');
 
-      // Clear the temp password flag
+      // Clear the temporary-password flag so ProtectedRoute no longer shows this screen
       localStorage.removeItem('requires_password_change');
 
-      // Set a flag so ProtectedRoute knows to show the license key entry next
-      localStorage.setItem('pending_license_registration', 'true');
+      // Signal that the license has NOT been bound yet for this account.
+      // ProtectedRoute reads this flag and will show the LockScreen (license entry)
+      // as the next mandatory setup step. This replaces the old 'pending_license_registration' flag.
+      localStorage.setItem('license_bound', 'false');
 
-      // Navigate to trigger ProtectedRoute re-evaluation
+      // Reload to trigger ProtectedRoute re-evaluation with the updated flags
       setTimeout(() => {
         window.location.reload();
       }, 1500);

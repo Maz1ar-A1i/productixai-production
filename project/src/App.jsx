@@ -71,6 +71,12 @@ function App() {
   const [checking, setChecking] = useState(true);
 
   const fetchLicenseStatus = async () => {
+    // Skip license check if the user is not authenticated.
+    // The check will be triggered after login via window.refreshLicenseStatus.
+    if (!localStorage.getItem('token')) {
+      setChecking(false);
+      return;
+    }
     try {
       const res = await api.get("/license/local-status");
       setLicenseStatus(res.data);

@@ -115,8 +115,13 @@ const LockScreen = ({ status, onUnlock }) => {
 
   const userRole = localStorage.getItem('role');
   const isAdmin = userRole === 'org_admin' || userRole === 'system_admin';
-  const isPendingSetup = localStorage.getItem('pending_license_registration') === 'true';
-  // During first-time setup (pending_license_registration), always show the form regardless of role
+  // isPendingSetup is true when the user just completed the credential-change step
+  // and is now entering their license key for the first time.
+  // We detect this via the license_bound flag (set to 'false' by ChangeCredentials after
+  // a successful credential update, and also written as 'false' by the login response
+  // for brand-new accounts that have no active license yet).
+  const isPendingSetup = localStorage.getItem('license_bound') === 'false';
+  // During first-time setup (isPendingSetup), always show the form regardless of role
   const showForm = details.showForm && (isAdmin || isPendingSetup);
   const displayDesc = (details.showForm && !isAdmin && !isPendingSetup)
     ? "Access Locked. Your organization's license is currently inactive or has been suspended. Please contact your organization administrator to activate the workspace."

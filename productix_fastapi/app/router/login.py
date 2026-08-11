@@ -182,18 +182,28 @@ async def login(credentials: LoginSchema, db: Session = Depends(get_db)):
                 detail=f"Your organization's license is {license_status_str.upper()}. Access suspended. Please contact your administrator.",
             )
 
-        # 4. Generate access token
+        # 4. Check whether a valid license is already bound to this org
+        from ..models import License as _License
+        _active_lic = db.query(_License).filter(
+            _License.organization_id == user.organization_id,
+            _License.status == "active"
+        ).first()
+        _license_bound = _active_lic is not None
+
+        # 5. Generate access token
         access_token = create_access_token({
             "user_id": user.id,
             "organization_id": user.organization_id if user.role != UserRole.system_admin else None,
             "role": user.role.value,
-            "requires_password_change": getattr(user, "requires_password_change", False)
+            "requires_password_change": getattr(user, "requires_password_change", False),
+            "license_bound": _license_bound
         })
 
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "requires_password_change": getattr(user, "requires_password_change", False)
+            "requires_password_change": getattr(user, "requires_password_change", False),
+            "license_bound": _license_bound
         }
 
     # ── Fallback: Local Database Authentication ──
@@ -270,16 +280,28 @@ async def login(credentials: LoginSchema, db: Session = Depends(get_db)):
                 detail=f"Your organization's license is {lic.status.upper()}. Access suspended. Please contact your administrator.",
             )
 
+    # Check whether a valid license is already bound to this org
+    from ..models import License as _License
+    _active_lic_local = None
+    if user.role != UserRole.system_admin and user.organization_id:
+        _active_lic_local = db.query(_License).filter(
+            _License.organization_id == user.organization_id,
+            _License.status == "active"
+        ).first()
+    _license_bound_local = _active_lic_local is not None or user.role == UserRole.system_admin
+
     # Create JWT access token
     access_token = create_access_token({
         "user_id": user.id,
         "organization_id": user.organization_id if user.role != UserRole.system_admin else None,
         "role": user.role.value,
-        "requires_password_change": getattr(user, "requires_password_change", False)
+        "requires_password_change": getattr(user, "requires_password_change", False),
+        "license_bound": _license_bound_local
     })
 
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "requires_password_change": getattr(user, "requires_password_change", False)
+        "requires_password_change": getattr(user, "requires_password_change", False),
+        "license_bound": _license_bound_local
     }

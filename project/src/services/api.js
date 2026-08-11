@@ -89,6 +89,18 @@ export const authService = {
       } else {
         localStorage.removeItem("requires_password_change");
       }
+
+      // Persist license_bound flag from the server response.
+      // This tells the frontend whether this org already has a license bound,
+      // so we only show the license-key entry screen on first-time setup.
+      const licenseBound = response.data.license_bound;
+      if (typeof licenseBound === 'boolean') {
+        localStorage.setItem("license_bound", licenseBound ? "true" : "false");
+      } else {
+        // If the server didn't send the flag (older backend), assume bound
+        // so existing users are not incorrectly shown the license screen.
+        localStorage.setItem("license_bound", "true");
+      }
     }
     return response.data;
   },
@@ -105,6 +117,21 @@ export const authService = {
 
   isAuthenticated: () => {
     return !!localStorage.getItem('token');
+  },
+
+  /**
+   * Returns true if a valid license is already bound to this account's organization.
+   * This flag is written at login time from the server response, so it is always
+   * authoritative. It is cleared on logout via localStorage.clear().
+   *
+   * Returns true by default (safe fallback) to avoid locking out existing users
+   * whose localStorage was cleared before this flag was introduced.
+   */
+  isLicenseBound: () => {
+    const val = localStorage.getItem('license_bound');
+    // If the key is absent (e.g. pre-existing session), default to true
+    if (val === null) return true;
+    return val === 'true';
   }
 };
 
