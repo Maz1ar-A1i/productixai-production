@@ -22,7 +22,6 @@ __pycache__/
 *.pptx
 
 # Build artifacts
-project/dist/
 dist/
 build/
 installer/
