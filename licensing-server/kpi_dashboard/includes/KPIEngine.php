@@ -59,6 +59,36 @@ class KPIEngine {
         ];
     }
 
+    public static function ensureBuiltInKPIs(PDO $db, int $orgId) {
+        $stmt = $db->prepare("SELECT COUNT(*) FROM kpi_definitions WHERE organization_id = ? AND is_active = 1");
+        $stmt->execute([$orgId]);
+        $count = (int)$stmt->fetchColumn();
+
+        if ($count === 0) {
+            $defaults = self::getBuiltInKPIs();
+            $ins = $db->prepare("
+                INSERT INTO kpi_definitions 
+                (organization_id, name, description, category, unit, computation_type, built_in_key, target_value, warning_threshold, critical_threshold, higher_is_better)
+                VALUES (?, ?, ?, ?, ?, 'built_in', ?, ?, ?, ?, ?)
+            ");
+            foreach ($defaults as $key => $cfg) {
+                $ins->execute([
+                    $orgId,
+                    $cfg['label'],
+                    $cfg['description'],
+                    strtolower($cfg['category']),
+                    $cfg['unit'],
+                    $key,
+                    $cfg['default_target'],
+                    $cfg['default_warning'],
+                    $cfg['default_critical'],
+                    $cfg['higher_is_better'] ? 1 : 0
+                ]);
+            }
+            self::computeAll($db, $orgId);
+        }
+    }
+
     public static function computeDashboardSummary(PDO $db, int $orgId) {
         // Fetch all product data records for org
         $stmt = $db->prepare("SELECT * FROM product_data_records WHERE organization_id = ? ORDER BY record_date DESC");
