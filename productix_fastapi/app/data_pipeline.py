@@ -96,17 +96,15 @@ LEGACY_COL_MAP = {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _map_column_name(raw: str) -> str:
-    """Map a raw column name to its canonical FIXED_VARIABLE name."""
+    """Preserve exact user column names, falling back to clean stripped names."""
+    if not raw:
+        return ""
     stripped = raw.strip()
-    # Direct match (case-insensitive)
+    # If case matches known FIXED_VARIABLES, format properly
     for fv in FIXED_VARIABLES:
         if stripped.lower() == fv.lower():
             return fv
-    # Legacy mapping
-    key = re.sub(r"[^a-z0-9]", "", stripped.lower())
-    if key in LEGACY_COL_MAP:
-        return LEGACY_COL_MAP[key]
-    # Fallback: return as-is
+    # Return user-defined exact column name as-is
     return stripped
 
 

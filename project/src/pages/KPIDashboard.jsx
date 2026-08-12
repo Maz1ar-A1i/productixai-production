@@ -294,7 +294,7 @@ const CreateKPIModal = ({ onClose, onCreated }) => {
       onCreated();
       onClose();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to create KPI');
+      alert(err.response?.data?.detail || err.message || 'Failed to create KPI');
     } finally {
       setIsSubmitting(false);
     }

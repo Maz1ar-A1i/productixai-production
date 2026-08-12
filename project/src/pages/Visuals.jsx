@@ -323,7 +323,7 @@ const Visuals = () => {
   // Derive numeric field keys
   const numericKeys = useMemo(() => {
     if (!records.length) return [];
-    return getNumericKeys(records[0]);
+    return getNumericKeys(records);
   }, [records]);
 
   // Aggregate records by date
@@ -331,12 +331,13 @@ const Visuals = () => {
     if (!records.length) return [];
     const byDate = {};
     records.forEach(r => {
-      const d = r.date || r.record_date || r.month || r.created_at?.slice(0, 10) || "unknown";
+      const d = r.date || r.record_date || r.month || r.data?.parameters?.date || r.created_at?.slice(0, 10) || "unknown";
       if (!byDate[d]) byDate[d] = { date: d, _count: 0 };
       byDate[d]._count++;
+      const flat = flattenRecordMetrics(r);
       numericKeys.forEach(k => {
-        const val = parseFloat(r[k]);
-        if (!isNaN(val)) byDate[d][k] = (byDate[d][k] || 0) + val;
+        const val = flat[k];
+        if (val !== undefined) byDate[d][k] = (byDate[d][k] || 0) + val;
       });
     });
     return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
@@ -374,10 +375,11 @@ const Visuals = () => {
     const key = selectedMetrics[0];
     const byUnit = {};
     records.forEach(r => {
-      const name = r.product_name || r.unit_name || `Unit ${r.product_id}`;
+      const name = r.product?.name || r.product_name || r.unit_name || r.data?.parameters?.towerName || `Unit ${r.product_id}`;
       if (!byUnit[name]) byUnit[name] = { name, total: 0, count: 0 };
-      const v = parseFloat(r[key]);
-      if (!isNaN(v)) { byUnit[name].total += v; byUnit[name].count++; }
+      const flat = flattenRecordMetrics(r);
+      const v = flat[key];
+      if (v !== undefined) { byUnit[name].total += v; byUnit[name].count++; }
     });
     return Object.values(byUnit).map(b => ({
       name: b.name,
@@ -913,12 +915,57 @@ const Visuals = () => {
 };
 
 // ─── Utility Helpers ──────────────────────────────────────────────────────
-function getNumericKeys(record) {
-  if (!record) return [];
-  const skip = new Set(["id", "product_id", "organization_id", "user_id", "created_by", "created_at", "updated_at"]);
-  return Object.entries(record)
-    .filter(([k, v]) => !skip.has(k) && !k.endsWith("_id") && !k.includes("date") && !k.includes("name") && v !== null && !isNaN(parseFloat(v)))
-    .map(([k]) => k);
+function flattenRecordMetrics(record) {
+  if (!record) return {};
+  const metrics = {};
+
+  const processObject = (obj) => {
+    if (!obj || typeof obj !== "object") return;
+    Object.entries(obj).forEach(([k, v]) => {
+      if (k === "name" || k === "Date" || k === "date" || k === "parameters") return;
+      const num = parseFloat(v);
+      if (!isNaN(num) && isFinite(num)) {
+        metrics[k] = (metrics[k] || 0) + num;
+      }
+    });
+  };
+
+  const dataObj = record.data;
+  if (dataObj && typeof dataObj === "object") {
+    if (dataObj.unit_data && typeof dataObj.unit_data === "object") {
+      processObject(dataObj.unit_data);
+    }
+    if (dataObj.computed && typeof dataObj.computed === "object") {
+      processObject(dataObj.computed);
+    }
+    if (Array.isArray(dataObj.customer_data)) {
+      dataObj.customer_data.forEach(c => processObject(c));
+    }
+    processObject(dataObj);
+  }
+
+  const skip = new Set(["id", "product_id", "organization_id", "user_id", "created_by", "created_at", "updated_at", "data", "product", "parameters"]);
+  Object.entries(record).forEach(([k, v]) => {
+    if (!skip.has(k) && !k.endsWith("_id") && !k.includes("date") && !k.includes("name")) {
+      const num = parseFloat(v);
+      if (!isNaN(num) && isFinite(num)) {
+        metrics[k] = (metrics[k] || 0) + num;
+      }
+    }
+  });
+
+  return metrics;
+}
+
+function getNumericKeys(records) {
+  if (!records) return [];
+  const recList = Array.isArray(records) ? records : [records];
+  const allKeys = new Set();
+  recList.forEach(r => {
+    const flat = flattenRecordMetrics(r);
+    Object.keys(flat).forEach(k => allKeys.add(k));
+  });
+  return Array.from(allKeys);
 }
 
 const SectionHeader = ({ title, subtitle, icon: Icon, color }) => (

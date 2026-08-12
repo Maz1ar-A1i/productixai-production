@@ -142,28 +142,28 @@ const Reports = () => {
 
           // Process unit vars
           Object.entries(dayUnitRow).forEach(([k, v]) => {
-            if (k.startsWith('unit_')) {
-              const label = k.replace('unit_', '');
-              const val = Number(v) || 0;
-              totals[label] = val;
-              // Heuristic: if it looks like cost, add to input cost
-              if (label.toLowerCase().includes('cost') || label.toLowerCase().includes('opex')) {
-                total_input_cost += val;
-              } else if (label.toLowerCase().includes('revenue') || label.toLowerCase().includes('output')) {
-                total_output += val;
-              }
+            if (k === 'Date' || k === 'date' || k === 'id') return;
+            const label = k.replace(/^unit_/, '');
+            const val = Number(v) || 0;
+            totals[label] = val;
+            if (label.toLowerCase().includes('cost') || label.toLowerCase().includes('opex') || label.toLowerCase().includes('expense') || label.toLowerCase().includes('price')) {
+              total_input_cost += val;
+            } else {
+              total_output += val;
             }
           });
 
           // Process customer vars
           dayCustomerRows.forEach(tr => {
             Object.entries(tr).forEach(([k, v]) => {
-              if (k.startsWith('customer_')) {
-                const label = k.replace('customer_', '');
-                const val = Number(v) || 0;
-                totals[label] = (totals[label] || 0) + val;
-                if (label.toLowerCase().includes('cost')) total_input_cost += val;
-                if (label.toLowerCase().includes('revenue') || label.toLowerCase().includes('units')) total_output += val;
+              if (k === 'Date' || k === 'date' || k === 'id' || k === 'name') return;
+              const label = k.replace(/^customer_/, '');
+              const val = Number(v) || 0;
+              totals[label] = (totals[label] || 0) + val;
+              if (label.toLowerCase().includes('cost') || label.toLowerCase().includes('opex') || label.toLowerCase().includes('expense') || label.toLowerCase().includes('price')) {
+                total_input_cost += val;
+              } else {
+                total_output += val;
               }
             });
           });

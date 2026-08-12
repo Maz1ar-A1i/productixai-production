@@ -43,8 +43,8 @@ try {
 
         $stmt = $db->prepare("
             INSERT INTO kpi_definitions 
-            (organization_id, name, description, category, unit, computation_type, built_in_key, target_value, warning_threshold, critical_threshold, higher_is_better)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (organization_id, name, description, category, unit, computation_type, built_in_key, formula_id, granularity, product_id, target_value, warning_threshold, critical_threshold, higher_is_better)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
             $user['organization_id'],
@@ -54,6 +54,9 @@ try {
             $input['unit'] ?? '%',
             $input['computation_type'] ?? 'built_in',
             $input['built_in_key'] ?? null,
+            $input['formula_id'] ?? null,
+            $input['granularity'] ?? 'monthly',
+            $input['product_id'] ?? null,
             $input['target_value'] ?? null,
             $input['warning_threshold'] ?? null,
             $input['critical_threshold'] ?? null,
@@ -64,8 +67,43 @@ try {
         // Compute initial snapshot
         KPIEngine::computeAll($db, $user['organization_id']);
 
-        echo json_encode(['status' => 'success', 'id' => $new_id, 'message' => 'KPI definition created']);
+        echo json_encode(['status' => 'success', 'id' => (int)$new_id, 'message' => 'KPI definition created']);
         exit;
+    }
+
+    if ($method === 'PUT') {
+        $id = $_GET['id'] ?? null;
+        $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+        if ($id) {
+            $stmt = $db->prepare("
+                UPDATE kpi_definitions 
+                SET name = ?, description = ?, category = ?, unit = ?, computation_type = ?,
+                    built_in_key = ?, formula_id = ?, granularity = ?, product_id = ?,
+                    target_value = ?, warning_threshold = ?, critical_threshold = ?, higher_is_better = ?
+                WHERE id = ? AND organization_id = ?
+            ");
+            $stmt->execute([
+                $input['name'] ?? 'Updated KPI',
+                $input['description'] ?? '',
+                $input['category'] ?? 'Operational',
+                $input['unit'] ?? '%',
+                $input['computation_type'] ?? 'built_in',
+                $input['built_in_key'] ?? null,
+                $input['formula_id'] ?? null,
+                $input['granularity'] ?? 'monthly',
+                $input['product_id'] ?? null,
+                $input['target_value'] ?? null,
+                $input['warning_threshold'] ?? null,
+                $input['critical_threshold'] ?? null,
+                isset($input['higher_is_better']) ? (int)$input['higher_is_better'] : 1,
+                $id,
+                $user['organization_id']
+            ]);
+
+            KPIEngine::computeAll($db, $user['organization_id']);
+            echo json_encode(['status' => 'success', 'message' => 'KPI definition updated']);
+            exit;
+        }
     }
 
     if ($method === 'DELETE') {

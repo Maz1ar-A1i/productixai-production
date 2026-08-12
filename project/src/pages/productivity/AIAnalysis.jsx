@@ -154,26 +154,28 @@ const AIAnalysisPage = () => {
         };
 
         Object.entries(dayUnitRow).forEach(([k, v]) => {
-          if (k.startsWith('unit_')) {
-            const label = k.replace('unit_', '');
-            const isOut = label.toLowerCase().includes('revenue') || 
-                          label.toLowerCase().includes('output') || 
-                          label.toLowerCase().includes('hr_productivity') ||
-                          label.toLowerCase().includes('efficiency');
-            processVal(label, v, isOut);
-          }
+          if (k === 'Date' || k === 'date' || k === 'id') return;
+          const label = k.replace(/^unit_/, '');
+          const isOut = label.toLowerCase().includes('revenue') || 
+                        label.toLowerCase().includes('output') || 
+                        label.toLowerCase().includes('hr_productivity') ||
+                        label.toLowerCase().includes('efficiency') ||
+                        label.toLowerCase().includes('sold') ||
+                        label.toLowerCase().includes('produced');
+          processVal(label, v, isOut);
         });
 
         dayCustomerRows.forEach(tr => {
           Object.entries(tr).forEach(([k, v]) => {
-            if (k.startsWith('customer_')) {
-              const label = k.replace('customer_', '');
-              const isOut = label.toLowerCase().includes('revenue') || 
-                            label.toLowerCase().includes('units') ||
-                            label.toLowerCase().includes('hr_productivity') ||
-                            label.toLowerCase().includes('efficiency');
-              processVal(label, v, isOut);
-            }
+            if (k === 'Date' || k === 'date' || k === 'id' || k === 'name') return;
+            const label = k.replace(/^customer_/, '');
+            const isOut = label.toLowerCase().includes('revenue') || 
+                          label.toLowerCase().includes('units') ||
+                          label.toLowerCase().includes('hr_productivity') ||
+                          label.toLowerCase().includes('efficiency') ||
+                          label.toLowerCase().includes('sold') ||
+                          label.toLowerCase().includes('produced');
+            processVal(label, v, isOut);
           });
         });
 

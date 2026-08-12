@@ -390,17 +390,18 @@ def get_record_report(
             "productivity_ratio": (total_output / v) if v > 0 else 0
         }
 
-    # Map to legacy structure for frontend compatibility
+    # Map to structure for frontend compatibility with exact user-included variables
+    all_totals = {**inputs, **outputs}
     return {
         "record_id": record_id,
         "product_name": record.product.name if record.product else "N/A",
         "month": record.month,
-        "totals": outputs, # Show output metrics as the main totals
+        "totals": all_totals if all_totals else (record.data or {}),
         "total_input_cost": total_input_cost,
         "input_cost_per_unit": (total_input_cost / total_output) if total_output > 0 else 0,
         "Combined_productivity_ratio": (total_output / total_input_cost) if total_input_cost > 0 else 0,
         "per_input_stats": per_input_stats,
-        "daily_details": [{"date": record.month, "totals": {**inputs, **outputs}}], # Map the single record as one "daily" entry
+        "daily_details": [{"date": record.month, "totals": all_totals if all_totals else (record.data or {})}],
         "trend_data": [
             {"shift": "Current", "output_units": total_output, "total_cost": total_input_cost, "productivity_ratio": (total_output / total_input_cost) if total_input_cost > 0 else 0}
         ]

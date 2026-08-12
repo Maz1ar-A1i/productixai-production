@@ -150,9 +150,10 @@ class KPIEngine {
     }
 
     public static function computeKPIValue(PDO $db, array $kpi, int $orgId) {
+        $summary = self::computeDashboardSummary($db, $orgId);
+
         // Built-in evaluation logic
         if ($kpi['computation_type'] === 'built_in') {
-            $summary = self::computeDashboardSummary($db, $orgId);
             $key = $kpi['built_in_key'] ?? '';
 
             switch ($key) {
@@ -167,10 +168,52 @@ class KPIEngine {
                 case 'energy_cost_pct':
                     return 28.4;
                 default:
-                    return 100.0;
+                    return (float)str_replace('%', '', $summary['metrics']['productivity_ratio']);
             }
         }
         
+        // Formula-based evaluation logic
+        if ($kpi['computation_type'] === 'formula') {
+            // Compute average or latest value from product_data_records
+            $sql = "SELECT data FROM product_data_records WHERE organization_id = ?";
+            $params = [$orgId];
+            if (!empty($kpi['product_id'])) {
+                $sql .= " AND product_id = ?";
+                $params[] = (int)$kpi['product_id'];
+            }
+            $sql .= " ORDER BY record_date DESC LIMIT 10";
+            
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!empty($records)) {
+                $values = [];
+                foreach ($records as $rec) {
+                    $data = is_string($rec['data']) ? json_decode($rec['data'], true) : ($rec['data'] ?? []);
+                    if (!is_array($data)) continue;
+
+                    // Extract metrics from unit_data or computed or flat
+                    $metrics = array_merge(
+                        $data['unit_data'] ?? [],
+                        $data['computed'] ?? [],
+                        is_array($data) ? array_filter($data, 'is_numeric') : []
+                    );
+
+                    foreach ($metrics as $mKey => $mVal) {
+                        if (is_numeric($mVal)) {
+                            $values[] = (float)$mVal;
+                        }
+                    }
+                }
+                if (!empty($values)) {
+                    return round(array_sum($values) / count($values), 2);
+                }
+            }
+            // Fallback to overall productivity ratio if specific formula metric is empty
+            return (float)str_replace('%', '', $summary['metrics']['productivity_ratio']);
+        }
+
         return null;
     }
 
