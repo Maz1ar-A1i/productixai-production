@@ -51,6 +51,47 @@ import UnitDataEntry from "./pages/UnitDataEntry";
 
 export const LicenseContext = createContext(null);
 
+// Error Boundary Component to prevent screen blackout on render errors
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Uncaught render error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+          <div className="max-w-md w-full bg-slate-900 border border-white/10 rounded-2xl p-8 shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4 text-red-400 font-bold text-xl">
+              ⚠️
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
+            <p className="text-white/50 text-sm mb-6">
+              An unexpected error occurred while rendering this page. You can reload to try again.
+            </p>
+            <button
+              onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
+              className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-sm transition-all shadow-lg"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // Public route guard (redirect if already logged in)
 const PublicRoute = ({ children }) => {
   const isAuthenticated = authService.isAuthenticated();
@@ -59,10 +100,14 @@ const PublicRoute = ({ children }) => {
   return isAuthenticated ? <Navigate to={defaultPath} replace /> : children;
 };
 
-// Wrapped protected route with layout
+// Wrapped protected route with layout and error boundary
 const LayoutRoute = ({ element, roles }) => (
   <ProtectedRoute allowedRoles={roles}>
-    <Layout>{element}</Layout>
+    <Layout>
+      <ErrorBoundary>
+        {element}
+      </ErrorBoundary>
+    </Layout>
   </ProtectedRoute>
 );
 

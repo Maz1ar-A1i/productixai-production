@@ -65,11 +65,17 @@ const KPICard = ({ kpi, onViewHistory, isAdmin }) => {
   const category = CATEGORY_CONFIG[kpi.category] || CATEGORY_CONFIG.operational;
 
   const formatValue = (val, unit) => {
-    if (val === null || val === undefined) return '—';
-    if (unit === '%') return `${val.toFixed(1)}%`;
-    if (unit === 'PKR') return `PKR ${val.toLocaleString()}`;
-    return val.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (val === null || val === undefined || val === '') return '—';
+    const num = Number(val);
+    if (isNaN(num)) return '—';
+    if (unit === '%') return `${num.toFixed(1)}%`;
+    if (unit === 'PKR') return `PKR ${num.toLocaleString()}`;
+    return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
   };
+
+  const currentNum = kpi.current_value !== null && kpi.current_value !== undefined ? Number(kpi.current_value) : null;
+  const targetNum = kpi.target_value !== null && kpi.target_value !== undefined ? Number(kpi.target_value) : null;
+  const changeNum = kpi.change_pct !== null && kpi.change_pct !== undefined ? Number(kpi.change_pct) : null;
 
   const trendIcon = kpi.current_trend === 'up'
     ? <ArrowUpRight size={14} className={kpi.higher_is_better ? 'text-emerald-400' : 'text-red-400'} />
@@ -80,6 +86,10 @@ const KPICard = ({ kpi, onViewHistory, isAdmin }) => {
   const sparklineColor = kpi.current_status === 'on_track' ? '#10b981'
     : kpi.current_status === 'warning' ? '#f59e0b'
       : kpi.current_status === 'critical' ? '#ef4444' : '#64748b';
+
+  const progressPct = (currentNum !== null && targetNum && !isNaN(currentNum) && !isNaN(targetNum) && targetNum !== 0)
+    ? Math.min(Math.max((currentNum / targetNum) * 100, 0), 100)
+    : 0;
 
   return (
     <div
@@ -111,9 +121,9 @@ const KPICard = ({ kpi, onViewHistory, isAdmin }) => {
           </p>
           <div className="flex items-center gap-1 mt-1">
             {trendIcon}
-            {kpi.change_pct !== null && kpi.change_pct !== undefined && (
-              <span className={`text-xs ${kpi.change_pct >= 0 ? (kpi.higher_is_better ? 'text-emerald-400' : 'text-red-400') : (kpi.higher_is_better ? 'text-red-400' : 'text-emerald-400')}`}>
-                {kpi.change_pct >= 0 ? '+' : ''}{kpi.change_pct.toFixed(1)}%
+            {changeNum !== null && !isNaN(changeNum) && (
+              <span className={`text-xs ${changeNum >= 0 ? (kpi.higher_is_better ? 'text-emerald-400' : 'text-red-400') : (kpi.higher_is_better ? 'text-red-400' : 'text-emerald-400')}`}>
+                {changeNum >= 0 ? '+' : ''}{changeNum.toFixed(1)}%
               </span>
             )}
           </div>
@@ -126,7 +136,7 @@ const KPICard = ({ kpi, onViewHistory, isAdmin }) => {
       </div>
 
       {/* Target bar */}
-      {kpi.target_value !== null && kpi.target_value !== undefined && kpi.current_value !== null && (
+      {targetNum !== null && !isNaN(targetNum) && currentNum !== null && !isNaN(currentNum) && (
         <div className="mt-3">
           <div className="flex justify-between text-[10px] text-white/40 mb-1">
             <span>Progress</span>
@@ -136,7 +146,7 @@ const KPICard = ({ kpi, onViewHistory, isAdmin }) => {
             <div
               className={`h-full rounded-full transition-all duration-700 ${kpi.current_status === 'on_track' ? 'bg-emerald-500' : kpi.current_status === 'warning' ? 'bg-amber-500' : 'bg-red-500'}`}
               style={{
-                width: `${Math.min(Math.max((kpi.current_value / kpi.target_value) * 100, 0), 100)}%`
+                width: `${progressPct}%`
               }}
             />
           </div>
@@ -688,10 +698,14 @@ const KPIDashboard = () => {
   const handleCompute = async () => {
     setIsComputing(true);
     try {
-      await kpiService.computeAll();
+      const res = await kpiService.computeAll();
       await fetchDashboard();
+      if (res?.data?.message) {
+        console.log("KPI compute completed:", res.data.message);
+      }
     } catch (err) {
-      alert(err.response?.data?.detail || 'Computation failed');
+      console.error("Compute error:", err);
+      alert(err.response?.data?.detail || err.message || 'Computation failed');
     } finally {
       setIsComputing(false);
     }

@@ -11,9 +11,6 @@ $db = get_kpi_db();
 $org_id = (int)$user['organization_id'];
 
 try {
-    // Auto-seed default KPIs if org has no active KPIs
-    KPIEngine::ensureBuiltInKPIs($db, $org_id);
-
     $category = $_GET['category'] ?? null;
     
     $sql = "

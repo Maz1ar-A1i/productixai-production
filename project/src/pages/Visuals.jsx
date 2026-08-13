@@ -297,6 +297,8 @@ const Visuals = () => {
     setError(null);
     try {
       const params = {
+        date_start: dateRange.start,
+        date_end: dateRange.end,
         start_date: dateRange.start,
         end_date: dateRange.end,
       };
@@ -308,7 +310,7 @@ const Visuals = () => {
       setRecords(data);
 
       if (data.length > 0 && selectedMetrics.length === 0) {
-        const numeric = getNumericKeys(data[0]);
+        const numeric = getNumericKeys(data);
         setSelectedMetrics(numeric.slice(0, 3));
       }
     } catch (err) {
@@ -326,12 +328,14 @@ const Visuals = () => {
     return getNumericKeys(records);
   }, [records]);
 
-  // Aggregate records by date
+  // Aggregate records by date with period filtering
   const chartData = useMemo(() => {
     if (!records.length) return [];
     const byDate = {};
     records.forEach(r => {
       const d = r.date || r.record_date || r.month || r.data?.parameters?.date || r.created_at?.slice(0, 10) || "unknown";
+      if (dateRange.start && d !== "unknown" && d < dateRange.start) return;
+      if (dateRange.end && d !== "unknown" && d > dateRange.end) return;
       if (!byDate[d]) byDate[d] = { date: d, _count: 0 };
       byDate[d]._count++;
       const flat = flattenRecordMetrics(r);
@@ -341,7 +345,7 @@ const Visuals = () => {
       });
     });
     return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-  }, [records, numericKeys]);
+  }, [records, numericKeys, dateRange]);
 
   // Prediction data with confidence ribbons
   const predData = useMemo(() => {
@@ -915,6 +919,25 @@ const Visuals = () => {
 };
 
 // ─── Utility Helpers ──────────────────────────────────────────────────────
+const SYSTEM_METADATA_KEYS = new Set([
+  "id", "product_id", "organization_id", "user_id", "created_by", "created_at",
+  "updated_at", "data", "product", "parameters", "unit_data", "computed",
+  "customer_data", "month", "year", "shift", "batch_id", "tower_id", "tower_name",
+  "is_active", "status", "record_id", "is_verified", "accepted", "date", "name",
+  "Date", "Name", "record_date", "region", "city", "_count", "_id"
+]);
+
+function isSystemKey(key) {
+  if (!key || typeof key !== "string") return true;
+  const k = key.trim();
+  if (SYSTEM_METADATA_KEYS.has(k)) return true;
+  const kLower = k.toLowerCase();
+  if (SYSTEM_METADATA_KEYS.has(kLower)) return true;
+  if (kLower.endsWith("_id") || kLower.endsWith("id") && kLower.length <= 4) return true;
+  if (kLower.includes("date") || kLower.includes("time") || kLower.includes("created") || kLower.includes("updated")) return true;
+  return false;
+}
+
 function flattenRecordMetrics(record) {
   if (!record) return {};
   const metrics = {};
@@ -922,7 +945,7 @@ function flattenRecordMetrics(record) {
   const processObject = (obj) => {
     if (!obj || typeof obj !== "object") return;
     Object.entries(obj).forEach(([k, v]) => {
-      if (k === "name" || k === "Date" || k === "date" || k === "parameters") return;
+      if (isSystemKey(k)) return;
       const num = parseFloat(v);
       if (!isNaN(num) && isFinite(num)) {
         metrics[k] = (metrics[k] || 0) + num;
@@ -944,9 +967,8 @@ function flattenRecordMetrics(record) {
     processObject(dataObj);
   }
 
-  const skip = new Set(["id", "product_id", "organization_id", "user_id", "created_by", "created_at", "updated_at", "data", "product", "parameters"]);
   Object.entries(record).forEach(([k, v]) => {
-    if (!skip.has(k) && !k.endsWith("_id") && !k.includes("date") && !k.includes("name")) {
+    if (!isSystemKey(k)) {
       const num = parseFloat(v);
       if (!isNaN(num) && isFinite(num)) {
         metrics[k] = (metrics[k] || 0) + num;
@@ -963,7 +985,9 @@ function getNumericKeys(records) {
   const allKeys = new Set();
   recList.forEach(r => {
     const flat = flattenRecordMetrics(r);
-    Object.keys(flat).forEach(k => allKeys.add(k));
+    Object.keys(flat).forEach(k => {
+      if (!isSystemKey(k)) allKeys.add(k);
+    });
   });
   return Array.from(allKeys);
 }

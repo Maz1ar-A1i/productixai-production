@@ -29,10 +29,15 @@ def list_records(
     product_id: Optional[int] = None,
     date_start: Optional[str] = None,
     date_end: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     region: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(deps.get_current_user)
 ):
+    eff_start = date_start or start_date
+    eff_end = date_end or end_date
+
     query = db.query(models.ProductDataRecord).filter(
         models.ProductDataRecord.organization_id == current_user.organization_id
     )
@@ -55,8 +60,8 @@ def list_records(
     from ..data_pipeline import apply_filters
     filters = {
         "tower_id": product_id,
-        "date_start": date_start,
-        "date_end": date_end,
+        "date_start": eff_start,
+        "date_end": eff_end,
         "region": region
     }
     return apply_filters(records, filters)

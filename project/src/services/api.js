@@ -449,10 +449,19 @@ export const kpiService = {
         method: 'POST',
         headers: getKPIHeaders()
       });
-      return { data: await response.json() };
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      if (data.error || data.status === 'error') throw new Error(data.message || data.error);
+      return { data };
     } catch (err) {
-      console.warn("KPI compute trigger failed or offline:", err);
-      return { data: { status: 'offline' } };
+      console.warn("PHP KPI compute failed or offline. Trying FastAPI fallback:", err);
+      try {
+        const res = await api.post('/kpi/compute');
+        return { data: res.data };
+      } catch (fallbackErr) {
+        console.error("FastAPI KPI compute failed:", fallbackErr);
+        throw fallbackErr.response?.data?.detail ? fallbackErr : err;
+      }
     }
   },
 
