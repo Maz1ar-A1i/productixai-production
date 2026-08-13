@@ -184,13 +184,19 @@ def create_formula(
     else:
         source_table = "unit_expenses"
 
-    # Check if a formula is already applied to this target_column in the organization
+    # Check if a formula is already applied to this target_column in the organization and product
     if payload.target_column:
-        existing_by_target = db.query(FormulaRecord).filter(
+        query_target = db.query(FormulaRecord).filter(
             FormulaRecord.organization_id == current_user.organization_id,
             FormulaRecord.target_column == payload.target_column,
             FormulaRecord.is_active == True,
-        ).first()
+        )
+        if payload.product_id:
+            query_target = query_target.filter(FormulaRecord.product_id == payload.product_id)
+        else:
+            query_target = query_target.filter(FormulaRecord.product_id.is_(None))
+        existing_by_target = query_target.first()
+
         if existing_by_target:
             # Overwrite/update the existing formula targeting the same column
             existing_by_target.formula_name = payload.formula_name
@@ -199,6 +205,7 @@ def create_formula(
             existing_by_target.source_table = source_table
             existing_by_target.expression_string = payload.expression_string
             existing_by_target.output_type = payload.output_type
+            existing_by_target.product_id = payload.product_id
             db.commit()
             db.refresh(existing_by_target)
             return existing_by_target
@@ -213,6 +220,7 @@ def create_formula(
         expression_string=payload.expression_string,
         output_type=payload.output_type,
         target_column=payload.target_column,
+        product_id=payload.product_id,
     )
     db.add(formula)
     db.commit()
@@ -222,21 +230,25 @@ def create_formula(
 
 # ── GET /  ────────────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=List[FormulaResponse], summary="List all active formulas")
+@router.get("/", response_model=List[FormulaResponse], summary="List active formulas")
 def list_formulas(
+    product_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Returns all active formulas for the current user's organisation.
-    Accessible to all authenticated users (for dashboard display).
+    Returns active formulas for the current user's organisation.
+    Optionally filters by product_id.
     """
     query = db.query(FormulaRecord).filter(
         FormulaRecord.organization_id == current_user.organization_id,
         FormulaRecord.is_active == True,
     )
-    if current_user.role.value == "org_admin":
-        query = query.filter(FormulaRecord.created_by == current_user.id)
+    if product_id is not None:
+        query = query.filter(
+            (FormulaRecord.product_id == product_id) | (FormulaRecord.product_id.is_(None))
+        )
+
     formulas = query.order_by(FormulaRecord.created_at.desc()).all()
     return formulas
 

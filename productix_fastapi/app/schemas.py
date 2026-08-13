@@ -434,6 +434,7 @@ class FormulaCreate(BaseModel):
     expression_string: str
     output_type: str = "number"  # number|currency|percentage
     target_column: Optional[str] = None  # which fixed column this formula fills (e.g. "Total Revenue")
+    product_id: Optional[int] = None
 
 
 class FormulaUpdate(BaseModel):
@@ -444,6 +445,7 @@ class FormulaUpdate(BaseModel):
     expression_string: Optional[str] = None
     output_type: Optional[str] = None
     target_column: Optional[str] = None  # which fixed column this formula fills
+    product_id: Optional[int] = None
 
 
 class FormulaResponse(BaseModel):
@@ -457,6 +459,7 @@ class FormulaResponse(BaseModel):
     expression_string: str
     output_type: str
     target_column: Optional[str] = None  # which fixed column this formula fills
+    product_id: Optional[int] = None
     is_active: bool
     created_at: Optional[datetime] = None
 

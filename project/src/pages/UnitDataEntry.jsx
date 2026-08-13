@@ -189,22 +189,38 @@ const UnitDataEntry = () => {
     return isNaN(num) ? 0 : num;
   };
 
+  const evaluateMathExpr = (expr) => {
+    if (!expr || typeof expr !== "string") return NaN;
+    const clean = expr.replace(/[^0-9.\s+\-*/%()]/g, "");
+    if (!clean.trim()) return NaN;
+    try {
+      const fn = new Function(`"use strict"; return (${clean});`);
+      const val = fn();
+      return typeof val === "number" && !isNaN(val) && isFinite(val) ? val : NaN;
+    } catch {
+      return NaN;
+    }
+  };
+
   const runCalculations = (row, type, formulasList = formulas, uRows = unitRows, uCols = unitColumns, cCols = customerColumns) => {
     const updatedRow = { ...row };
     const cols = type === "unit" ? uCols : cCols;
 
+    // Filter formulas: run only global formulas OR formulas assigned to the active unit
+    const activeFormulas = (formulasList || []).filter(f => {
+      if (!f.product_id) return true;
+      return selectedUnit && String(f.product_id) === String(selectedUnit.id);
+    });
+
+    if (activeFormulas.length === 0) return updatedRow;
+
     // Build a dual-key context:
-    // Each column contributes TWO keys — its display label AND its original variable name.
-    // The original name is encoded in the key: 'unit_Fuel Cost' → 'Fuel Cost'
     const context = {};
     const buildContext = (colList, dataRow) => {
       colList.forEach(c => {
         if (c.key === "Date" || c.key === "Customer") return;
-        // Use sanitizeNumber to handle Excel-formatted values (commas, currency symbols, etc.)
         const val = sanitizeNumber(dataRow[c.key]);
-        // Key 1: display label (may be renamed)
         context[c.label] = val;
-        // Key 2: original variable name extracted from key (e.g. 'unit_Fuel Cost' → 'Fuel Cost')
         const originalName = c.key.replace(/^unit_|^customer_/, "");
         if (originalName !== c.label) context[originalName] = val;
       });
@@ -242,8 +258,8 @@ const UnitDataEntry = () => {
       return undefined;
     };
 
-    // Evaluate each formula whose target column exists in this table
-    formulasList.forEach(f => {
+    // Evaluate each scoped formula whose target column exists in this table
+    activeFormulas.forEach(f => {
       const targetCol = findTargetCol(cols, f.formula_name, f.target_column);
       if (!targetCol) return;
 
@@ -262,8 +278,7 @@ const UnitDataEntry = () => {
 
       if (canEval) {
         try {
-          // eslint-disable-next-line no-eval
-          const result = eval(expr);
+          const result = evaluateMathExpr(expr);
           updatedRow[targetCol.key] = isNaN(result) || !isFinite(result) ? "" : Number(result.toFixed(2));
           context[f.formula_name] = Number(updatedRow[targetCol.key]);
           const originalTarget = targetCol.key.replace(/^unit_|^customer_/, "");

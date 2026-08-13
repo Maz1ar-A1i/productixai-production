@@ -380,11 +380,13 @@ class FormulaRecord(Base):
     expression_string = Column(Text, nullable=False)        # e.g. "[KW Sold] / [Total Capacity (KW)] * 100"
     output_type = Column(String(20), default="number")      # number|currency|percentage
     target_column = Column(String(255), nullable=True)       # which column in data record this formula fills
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True)               # soft delete flag
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     organization = relationship("Organization")
     created_by_user = relationship("User", foreign_keys=[created_by])
+    product = relationship("Product", foreign_keys=[product_id])
 
 
 # ------------------------

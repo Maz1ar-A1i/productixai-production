@@ -337,6 +337,7 @@ export default function FormulaBuilder() {
         expression_string: expression,
         output_type: tmplObj?.outputType || 'number',
         target_column: targetColumn || null,
+        product_id: selectedUnitId ? parseInt(selectedUnitId, 10) : null,
       };
       if (editFormula) {
         await formulaService.update(editFormula.id, payload);
