@@ -71,6 +71,8 @@ def rename_column(
         mappings[canonical_name] = new_display_name
 
     org.column_mappings = mappings
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(org, "column_mappings")
     db.flush()
 
     # If the display name changed, propagate the change to Data Records and Formulas

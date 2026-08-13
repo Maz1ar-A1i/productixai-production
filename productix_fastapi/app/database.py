@@ -70,11 +70,17 @@ def auto_migrate_db(engine):
         "users": [
             ("is_active", "BOOLEAN DEFAULT 1"),
             ("is_verified", "BOOLEAN DEFAULT 1"),
-            ("requires_password_change", "BOOLEAN DEFAULT 0")
+            ("requires_password_change", "BOOLEAN DEFAULT 0"),
+            ("chatbot_name", "VARCHAR(100) DEFAULT 'Productix AI'"),
+            ("chatbot_persona", "TEXT NULL"),
+            ("analysis_goals", "JSON NULL")
         ],
         "organizations": [
             ("column_mappings", "JSON NULL"),
-            ("user_limit", "INTEGER DEFAULT 5")
+            ("user_limit", "INTEGER DEFAULT 5"),
+            ("chatbot_name", "VARCHAR(100) DEFAULT 'Productix AI'"),
+            ("chatbot_persona", "TEXT NULL"),
+            ("analysis_goals", "JSON NULL")
         ],
         "products": [
             ("sector", "VARCHAR DEFAULT 'Telecom'"),
@@ -85,7 +91,12 @@ def auto_migrate_db(engine):
             ("customer_vars", "JSON NULL")
         ],
         "formula_records": [
-            ("target_column", "VARCHAR(255) NULL")
+            ("target_column", "VARCHAR(255) NULL"),
+            ("product_id", "INTEGER NULL")
+        ],
+        "kpi_definitions": [
+            ("product_id", "INTEGER NULL"),
+            ("granularity", "VARCHAR(20) DEFAULT 'monthly'")
         ]
     }
     
