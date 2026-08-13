@@ -189,27 +189,80 @@ const UnitDataEntry = () => {
     return isNaN(num) ? 0 : num;
   };
 
-  const evaluateMathExpr = (expr) => {
-    if (!expr || typeof expr !== "string") return NaN;
-    const clean = expr.replace(/[^0-9.\s+\-*/%()]/g, "");
-    if (!clean.trim()) return NaN;
+  // Safe mathematical expression evaluator – no eval / new Function.
+  // Supports: + - * / with standard operator precedence and parentheses.
+  const evaluateMathExpr = (exprStr) => {
+    if (!exprStr || typeof exprStr !== "string") return NaN;
+    const s = exprStr.trim();
+    if (!s) return NaN;
+    let pos = 0;
+    const peek = () => s[pos];
+    const consume = () => s[pos++];
+    const skipWS = () => { while (pos < s.length && s[pos] === " ") pos++; };
+    const parseExpr = () => {
+      let left = parseTerm();
+      skipWS();
+      while (pos < s.length && (peek() === "+" || peek() === "-")) {
+        const op = consume(); skipWS();
+        const right = parseTerm();
+        left = op === "+" ? left + right : left - right;
+        skipWS();
+      }
+      return left;
+    };
+    const parseTerm = () => {
+      let left = parseUnary();
+      skipWS();
+      while (pos < s.length && (peek() === "*" || peek() === "/" || peek() === "%")) {
+        const op = consume(); skipWS();
+        const right = parseUnary();
+        if (op === "*") left = left * right;
+        else if (op === "/") left = right === 0 ? NaN : left / right;
+        else left = left % right;
+        skipWS();
+      }
+      return left;
+    };
+    const parseUnary = () => {
+      skipWS();
+      if (peek() === "-") { consume(); return -parseAtom(); }
+      if (peek() === "+") { consume(); return parseAtom(); }
+      return parseAtom();
+    };
+    const parseAtom = () => {
+      skipWS();
+      if (peek() === "(") {
+        consume();
+        const val = parseExpr();
+        skipWS();
+        if (peek() === ")") consume();
+        return val;
+      }
+      // parse number (including scientific notation)
+      let numStr = "";
+      while (pos < s.length && /[0-9.eE+\-]/.test(s[pos])) {
+        // allow +/- only after e/E in scientific notation
+        if ((s[pos] === "+" || s[pos] === "-") && !/[eE]/.test(s[pos - 1] || "")) break;
+        numStr += consume();
+      }
+      const n = Number(numStr);
+      return isNaN(n) ? 0 : n;
+    };
     try {
-      const fn = new Function(`"use strict"; return (${clean});`);
-      const val = fn();
-      return typeof val === "number" && !isNaN(val) && isFinite(val) ? val : NaN;
-    } catch {
-      return NaN;
-    }
+      const result = parseExpr();
+      return typeof result === "number" && !isNaN(result) && isFinite(result) ? result : NaN;
+    } catch { return NaN; }
   };
 
   const runCalculations = (row, type, formulasList = formulas, uRows = unitRows, uCols = unitColumns, cCols = customerColumns) => {
     const updatedRow = { ...row };
     const cols = type === "unit" ? uCols : cCols;
 
-    // Filter formulas: run only global formulas OR formulas assigned to the active unit
+    // Filter formulas: run global formulas (no product_id) OR formulas assigned to the active unit.
+    // Uses selectedUnitId (the authoritative state string) instead of derived selectedUnit object.
     const activeFormulas = (formulasList || []).filter(f => {
-      if (!f.product_id) return true;
-      return selectedUnit && String(f.product_id) === String(selectedUnit.id);
+      if (!f.product_id) return true;           // global formula — always run
+      return selectedUnitId && String(f.product_id) === String(selectedUnitId);
     });
 
     if (activeFormulas.length === 0) return updatedRow;
