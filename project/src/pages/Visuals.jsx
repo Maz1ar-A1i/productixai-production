@@ -63,11 +63,15 @@ const GRADIENTS = [
 
 // ─── Formatters ───────────────────────────────────────────────────────────
 const fmtDate = (d) => {
-  if (!d) return "";
+  if (!d || d === "unknown") return "";
+  if (typeof d === "string" && (d.startsWith("+") || d.includes("Forecast") || d.includes("Day"))) return d;
   try {
-    return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const dStr = String(d).trim();
+    const dt = new Date(dStr.length === 7 ? `${dStr}-01` : dStr);
+    if (isNaN(dt.getTime())) return String(d);
+    return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   } catch {
-    return d;
+    return String(d);
   }
 };
 
@@ -90,7 +94,7 @@ const pctChange = (curr, prev) => {
 };
 
 // ─── Ultra-Glassy Tooltip ─────────────────────────────────────────────────
-const CustomTooltip = ({ active, payload, label }) => {
+const CustomTooltip = ({ active, payload, label, getMetricDisplayName }) => {
   if (!active || !payload?.length) return null;
   return (
     <div
@@ -115,8 +119,10 @@ const CustomTooltip = ({ active, payload, label }) => {
         </span>
       </div>
       {payload.map((p, i) => {
-        const isPred = p.name?.includes("pred");
-        const cleanName = p.name?.replace("_pred", " (Forecast)").replace(/_/g, " ");
+        const isPred = p.name?.includes("Forecast") || p.name?.includes("pred");
+        const rawKey = p.dataKey ? String(p.dataKey).replace(/_pred$/, "") : p.name;
+        const displayName = getMetricDisplayName ? getMetricDisplayName(rawKey) : rawKey.replace(/_/g, " ");
+        const finalLabel = isPred ? `${displayName} (AI Forecast)` : displayName;
         return (
           <div key={i} className="flex items-center justify-between gap-4 my-1.5">
             <div className="flex items-center gap-2">
@@ -128,7 +134,7 @@ const CustomTooltip = ({ active, payload, label }) => {
                 }}
               />
               <span className="text-white/80 font-medium capitalize" style={{ opacity: isPred ? 0.75 : 1 }}>
-                {cleanName}
+                {finalLabel}
               </span>
             </div>
             <span className="font-mono font-bold text-white tracking-wider">
@@ -263,18 +269,75 @@ const Visuals = () => {
   const [showPrediction, setShowPrediction] = useState(true);
   const [chartType, setChartType] = useState("area"); // area | bar | line | radial
 
+  // Dynamic mapping: variable key/slug -> updated display name from unit schema
+  const metricDisplayNameMap = useMemo(() => {
+    const map = {};
+    units.forEach(u => {
+      const allVars = [
+        ...(u.unit_vars || []),
+        ...(u.customer_vars || []),
+        ...(u.input_fields || []),
+        ...(u.output_fields || [])
+      ];
+      allVars.forEach(v => {
+        if (!v) return;
+        if (typeof v === 'object') {
+          const key = v.key || v.name;
+          const name = v.name || v.key;
+          if (key && name) {
+            map[key] = name;
+            map[key.toLowerCase()] = name;
+            map[key.replace(/_/g, " ")] = name;
+            map[key.replace(/\s+/g, "_")] = name;
+          }
+        } else if (typeof v === 'string') {
+          map[v] = v;
+          map[v.toLowerCase()] = v;
+          map[v.replace(/_/g, " ")] = v;
+        }
+      });
+    });
+    return map;
+  }, [units]);
+
+  const getMetricDisplayName = useCallback((key) => {
+    if (!key) return "";
+    const k = String(key).trim();
+    if (metricDisplayNameMap[k]) return metricDisplayNameMap[k];
+    if (metricDisplayNameMap[k.toLowerCase()]) return metricDisplayNameMap[k.toLowerCase()];
+    if (metricDisplayNameMap[k.replace(/_/g, " ")]) return metricDisplayNameMap[k.replace(/_/g, " ")];
+    if (metricDisplayNameMap[k.replace(/\s+/g, "_")]) return metricDisplayNameMap[k.replace(/\s+/g, "_")];
+    return k.replace(/_/g, " ");
+  }, [metricDisplayNameMap]);
+
+  // Find max record date across all records (anchors 7D, 1M, 3M to active dataset timeframe)
+  const maxRecordDate = useMemo(() => {
+    if (!records.length) return new Date();
+    let maxStr = null;
+    records.forEach(r => {
+      const dStr = r.date || r.record_date || r.month || r.data?.parameters?.date || r.created_at?.slice(0, 10);
+      if (dStr && dStr !== "unknown") {
+        const full = dStr.length === 7 ? `${dStr}-28` : dStr.slice(0, 10);
+        if (!maxStr || full > maxStr) maxStr = full;
+      }
+    });
+    return maxStr ? new Date(maxStr) : new Date();
+  }, [records]);
+
   // Compute date range from preset
   const dateRange = useMemo(() => {
     if (useCustom && customStart && customEnd) {
       return { start: customStart, end: customEnd };
     }
     const now = new Date();
-    const end = now.toISOString().slice(0, 10);
+    // Use latest record date if calendar date is ahead of data records
+    const anchor = (maxRecordDate.getTime() > 0 && maxRecordDate < now) ? maxRecordDate : now;
+    const end = anchor.toISOString().slice(0, 10);
     const daysMap = { "7D": 7, "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
     const days = daysMap[preset] || 30;
-    const start = new Date(now.getTime() - days * 86400000).toISOString().slice(0, 10);
+    const start = new Date(anchor.getTime() - days * 86400000).toISOString().slice(0, 10);
     return { start, end };
-  }, [preset, useCustom, customStart, customEnd]);
+  }, [preset, useCustom, customStart, customEnd, maxRecordDate]);
 
   // Fetch org users (admin only)
   useEffect(() => {
@@ -406,31 +469,38 @@ const Visuals = () => {
     return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
   }, [records, numericKeys, dateRange, isDateInRange]);
 
-  // Prediction data with confidence ribbons
+  // Prediction data with valid forecast dates (no "Invalid Date")
   const predData = useMemo(() => {
     if (!showPrediction || !chartData.length || !selectedMetrics.length) return [];
     const key = selectedMetrics[0];
-    return buildPrediction(chartData, key, 5).map(p => ({
-      date: `+${p._index - chartData.length + 1}d`,
-      ...Object.fromEntries(
-        Object.entries(p).filter(([k]) => !k.startsWith("_"))
-      ),
-      _isPred: true,
-    }));
+    const lastDateStr = chartData[chartData.length - 1].date;
+    const lastTime = new Date(lastDateStr.length === 7 ? `${lastDateStr}-01` : lastDateStr).getTime() || Date.now();
+
+    return buildPrediction(chartData, key, 5).map((p, i) => {
+      const fTime = new Date(lastTime + (i + 1) * 86400000);
+      const fDateStr = isNaN(fTime.getTime()) ? `Forecast +${i + 1}d` : fTime.toISOString().slice(0, 10);
+      return {
+        date: fDateStr,
+        ...Object.fromEntries(
+          Object.entries(p).filter(([k]) => !k.startsWith("_"))
+        ),
+        _isPred: true,
+      };
+    });
   }, [chartData, selectedMetrics, showPrediction]);
 
   const fullData = useMemo(() => [...chartData, ...predData], [chartData, predData]);
 
-  // KPI summary cards
+  // KPI summary cards with updated metric display names
   const kpiSummary = useMemo(() => {
     if (!chartData.length || !selectedMetrics.length) return [];
     return selectedMetrics.slice(0, 4).map((key, i) => {
       const vals = chartData.map(d => d[key]).filter(v => v !== undefined);
       const latest = vals[vals.length - 1] ?? 0;
       const prev = vals[vals.length - 2] ?? 0;
-      return { label: key.replace(/_/g, " "), value: latest, prev, color: PALETTE[i % PALETTE.length] };
+      return { label: getMetricDisplayName(key), value: latest, prev, color: PALETTE[i % PALETTE.length] };
     });
-  }, [chartData, selectedMetrics]);
+  }, [chartData, selectedMetrics, getMetricDisplayName]);
 
   // Per-Unit Breakdown
   const unitBreakdown = useMemo(() => {
@@ -715,7 +785,7 @@ const Visuals = () => {
                     boxShadow: active ? `0 0 6px ${chipColor}` : "none",
                     display: "inline-block"
                   }} />
-                  {k.replace(/_/g, " ")}
+                  {getMetricDisplayName(k)}
                 </button>
               );
             })}
@@ -797,7 +867,7 @@ const Visuals = () => {
                 <CartesianGrid stroke="rgba(255,255,255,0.04)" strokeDasharray="3 3" />
                 <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} tickLine={false} tickFormatter={fmtDate} />
                 <YAxis tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={fmtNum} width={60} />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip getMetricDisplayName={getMetricDisplayName} />} />
                 <Legend wrapperStyle={{ fontSize: 11, color: "rgba(255,255,255,0.6)", paddingTop: 10 }} />
                 {chartData.length > 0 && (
                   <ReferenceLine x={chartData[chartData.length - 1].date} stroke="rgba(167,139,250,0.5)" strokeDasharray="5 3" label={{ value: "Forecast Start", fill: "#a78bfa", fontSize: 10, position: "top" }} />
@@ -806,11 +876,11 @@ const Visuals = () => {
                 {selectedMetrics.map((k, i) => {
                   const c = PALETTE[i % PALETTE.length];
                   return chartType === "bar" ? (
-                    <Bar key={k} dataKey={k} fill={c} fillOpacity={0.8} radius={[6, 6, 0, 0]} name={k.replace(/_/g, " ")} />
+                    <Bar key={k} dataKey={k} fill={c} fillOpacity={0.8} radius={[6, 6, 0, 0]} name={getMetricDisplayName(k)} />
                   ) : chartType === "line" ? (
-                    <Line key={k} type="monotone" dataKey={k} stroke={c} strokeWidth={3} dot={{ r: 3, fill: c }} activeDot={{ r: 6, stroke: "#fff", strokeWidth: 2 }} name={k.replace(/_/g, " ")} filter="url(#glow-cyan)" />
+                    <Line key={k} type="monotone" dataKey={k} stroke={c} strokeWidth={3} dot={{ r: 3, fill: c }} activeDot={{ r: 6, stroke: "#fff", strokeWidth: 2 }} name={getMetricDisplayName(k)} filter="url(#glow-cyan)" />
                   ) : (
-                    <Area key={k} type="monotone" dataKey={k} stroke={c} strokeWidth={2.5} fill={`url(#grad_glow_${i})`} dot={false} activeDot={{ r: 6, stroke: "#fff", strokeWidth: 2 }} name={k.replace(/_/g, " ")} />
+                    <Area key={k} type="monotone" dataKey={k} stroke={c} strokeWidth={2.5} fill={`url(#grad_glow_${i})`} dot={false} activeDot={{ r: 6, stroke: "#fff", strokeWidth: 2 }} name={getMetricDisplayName(k)} />
                   );
                 })}
 
@@ -822,7 +892,7 @@ const Visuals = () => {
                     strokeWidth={2.5}
                     strokeDasharray="6 4"
                     dot={{ fill: "#a78bfa", r: 4 }}
-                    name={`${selectedMetrics[0].replace(/_/g, " ")} (AI Forecast)`}
+                    name={`${getMetricDisplayName(selectedMetrics[0])} (AI Forecast)`}
                     connectNulls={false}
                   />
                 )}
@@ -834,7 +904,7 @@ const Visuals = () => {
           <div className="chart-card">
             <SectionHeader
               title="Per-Unit Performance Breakdown"
-              subtitle={selectedMetrics[0]?.replace(/_/g, " ") || "Primary Metric"}
+              subtitle={getMetricDisplayName(selectedMetrics[0]) || "Primary Metric"}
               icon={BarChart3}
               color="#3b82f6"
             />
@@ -844,7 +914,7 @@ const Visuals = () => {
                   <CartesianGrid stroke="rgba(255,255,255,0.04)" strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} tickLine={false} tickFormatter={fmtNum} />
                   <YAxis type="category" dataKey="name" tick={{ fill: "rgba(255,255,255,0.6)", fontSize: 11 }} tickLine={false} width={100} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip getMetricDisplayName={getMetricDisplayName} />} />
                   {selectedMetrics[0] && (
                     <Bar
                       dataKey={selectedMetrics[0]}
@@ -881,9 +951,9 @@ const Visuals = () => {
                   <CartesianGrid stroke="rgba(255,255,255,0.04)" strokeDasharray="3 3" />
                   <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} tickFormatter={fmtDate} tickLine={false} />
                   <YAxis tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={fmtNum} width={60} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area type="monotone" dataKey={selectedMetrics[0]} stroke="#00f2fe" strokeWidth={2.5} fill="transparent" dot={{ fill: "#00f2fe", r: 3 }} name="Actual Data" />
-                  <Area type="monotone" dataKey={`${selectedMetrics[0]}_pred`} stroke="#a78bfa" strokeWidth={2} strokeDasharray="5 4" fill="url(#predGradRibbon)" dot={{ fill: "#a78bfa", r: 4 }} name="Forecast Target" />
+                  <Tooltip content={<CustomTooltip getMetricDisplayName={getMetricDisplayName} />} />
+                  <Area type="monotone" dataKey={selectedMetrics[0]} stroke="#00f2fe" strokeWidth={2.5} fill="transparent" dot={{ fill: "#00f2fe", r: 3 }} name={getMetricDisplayName(selectedMetrics[0])} />
+                  <Area type="monotone" dataKey={`${selectedMetrics[0]}_pred`} stroke="#a78bfa" strokeWidth={2} strokeDasharray="5 4" fill="url(#predGradRibbon)" dot={{ fill: "#a78bfa", r: 4 }} name={`${getMetricDisplayName(selectedMetrics[0])} (AI Forecast)`} />
                 </ComposedChart>
               </ResponsiveContainer>
             ) : (
@@ -915,7 +985,7 @@ const Visuals = () => {
                       <Cell key={`cell-${index}`} fill={entry.color} stroke="rgba(0,0,0,0.5)" strokeWidth={2} />
                     ))}
                   </Pie>
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip getMetricDisplayName={getMetricDisplayName} />} />
                   <Legend wrapperStyle={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }} />
                 </PieChart>
               </ResponsiveContainer>
@@ -938,7 +1008,7 @@ const Visuals = () => {
                   <CartesianGrid stroke="rgba(255,255,255,0.04)" strokeDasharray="3 3" />
                   <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} tickFormatter={fmtDate} tickLine={false} />
                   <YAxis tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={fmtNum} width={60} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip getMetricDisplayName={getMetricDisplayName} />} />
                   <Legend wrapperStyle={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }} />
                   {selectedMetrics.map((k, i) => (
                     <Line
@@ -948,7 +1018,7 @@ const Visuals = () => {
                       stroke={PALETTE[i % PALETTE.length]}
                       strokeWidth={2.5}
                       dot={false}
-                      name={k.replace(/_/g, " ")}
+                      name={getMetricDisplayName(k)}
                       strokeDasharray={i > 0 ? `${4 + i * 2} 3` : undefined}
                     />
                   ))}
