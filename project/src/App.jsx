@@ -204,9 +204,10 @@ function App() {
             {/* /calculate and /analyze routes removed (Task 9) */}
             <Route path="/chatbot" element={<LayoutRoute element={<Chatbot />} />} />
             <Route path="/chatbot/:botType" element={<LayoutRoute element={<Chatbot />} />} />
-            <Route path="/agent" element={<LayoutRoute element={<Agent />} />} />
-            <Route path="/productivity/reports" element={<LayoutRoute element={<Reports />} />} />
-            <Route path="/productivity/ai" element={<LayoutRoute element={<AIAnalysis />} />} />
+            <Route path="/reports" element={<LayoutRoute element={<Reports />} />} />
+            <Route path="/productivity/reports" element={<Navigate to="/reports" replace />} />
+            <Route path="/productivity/ai" element={<Navigate to="/reports" replace />} />
+            <Route path="/agent" element={<Navigate to="/reports" replace />} />
             <Route path="/productivity/rag-chat" element={<LayoutRoute element={<RAGChat />} />} />
             <Route path="/kpi" element={<LayoutRoute element={<KPIDashboard />} />} />
 

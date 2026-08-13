@@ -185,21 +185,7 @@ const Sidebar = () => {
           <NavItem to="/kpi" icon={Target} label="KPI Dashboard" />
           <NavItem to="/visuals" icon={TrendingUp} label="Visual Analytics" />
 
-          {role !== "org_admin" && (
-            <>
-              <SectionLabel label="Reports" />
-              <SubMenu
-                icon={FileText}
-                label="Reports"
-                isOpen={reportsOpen}
-                onToggle={() => setReportsOpen(!reportsOpen)}
-              >
-                <NavItem to="/productivity/reports" icon={FileText} label="report and analytics" />
-                <NavItem to="/productivity/ai" icon={Cpu} label="Ai Insights" />
-                <NavItem to="/agent" icon={FileText} label="ai report agent" />
-              </SubMenu>
-            </>
-          )}
+          <NavItem to="/reports" icon={FileText} label="Reports" />
 
           {role !== "org_admin" && role !== "system_admin" && (
             <SubMenu

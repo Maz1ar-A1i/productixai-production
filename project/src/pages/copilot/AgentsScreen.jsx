@@ -81,7 +81,7 @@ const AGENTS = [
       { label: 'Margin', value: '22.4%', trend: '-3.6%', up: false },
     ],
     actions: ['Review OPEX', 'Optimize energy', 'Check vendor SLAs'],
-    path: '/productivity/ai',
+    path: '/reports',
   },
   {
     id: 'growth',
