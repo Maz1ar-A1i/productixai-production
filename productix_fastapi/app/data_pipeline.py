@@ -326,24 +326,40 @@ def apply_filters(
 
     # Date filters — extract date from the record's data JSON or month field
     def _get_record_date(rec) -> Optional[str]:
-        """Extract date string from record, trying new schema then fallback."""
+        """Extract date string from record, trying canonical schema then month fallback."""
         d = rec.data or {}
-        # New canonical schema
         if "parameters" in d and "date" in d["parameters"]:
             return str(d["parameters"]["date"])
-        # Legacy: stored in 'month' column
-        return str(rec.month) if rec.month else None
+        if hasattr(rec, "record_date") and rec.record_date:
+            return str(rec.record_date)
+        if rec.month:
+            return str(rec.month)
+        if hasattr(rec, "created_at") and rec.created_at:
+            return str(rec.created_at)[:10]
+        return None
 
-    if date_start:
+    def _date_matches_range(rec_date_str: Optional[str], start: Optional[str], end: Optional[str]) -> bool:
+        if not rec_date_str:
+            return False
+        d_val = rec_date_str.strip()
+        # If rec_date_str is YYYY-MM (7 chars), compare by month prefix
+        if len(d_val) == 7 and d_val[4] == "-":
+            if start and d_val < start[:7]:
+                return False
+            if end and d_val > end[:7]:
+                return False
+            return True
+        # Otherwise compare full YYYY-MM-DD
+        if start and d_val < start:
+            return False
+        if end and d_val > end:
+            return False
+        return True
+
+    if date_start or date_end:
         filtered = [
             r for r in filtered
-            if (_get_record_date(r) or "") >= date_start
-        ]
-
-    if date_end:
-        filtered = [
-            r for r in filtered
-            if (_get_record_date(r) or "") <= date_end
+            if _date_matches_range(_get_record_date(r), date_start, date_end)
         ]
 
     if recency_days:

@@ -284,196 +284,144 @@ const getKPIHeaders = () => {
   };
 };
 
-// KPI Dashboard services — Connected to PHP KPI Engine Server with offline fallback
+// KPI Dashboard services — Connected to FastAPI Backend (with optional PHP server fallback)
 export const kpiService = {
   // Dashboard endpoint (all KPIs with latest values + sparklines)
   getDashboard: async (filters = {}) => {
     try {
-      const params = new URLSearchParams(filters).toString();
-      const url = `${PHP_KPI_BASE_URL}/dashboard.php${params ? '?' + params : ''}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: getKPIHeaders()
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      localStorage.setItem('cached_kpi_dashboard', JSON.stringify(data));
-      return { data };
+      const res = await api.get('/kpi/dashboard', { params: filters });
+      localStorage.setItem('cached_kpi_dashboard', JSON.stringify(res.data));
+      return { data: res.data };
     } catch (err) {
-      console.warn("KPI Server offline or unreachable. Trying local fallback:", err);
-      // Fallback to FastAPI backend endpoint if PHP is unreachable
-      try {
-        const res = await api.get('/kpi/dashboard');
-        return { data: res.data };
-      } catch (fallbackErr) {
-        const cached = localStorage.getItem('cached_kpi_dashboard');
-        if (cached) return { data: JSON.parse(cached) };
-        return { data: { summary: [], kpis: [] } };
+      if (import.meta.env.VITE_USE_PHP_KPI === 'true') {
+        try {
+          const params = new URLSearchParams(filters).toString();
+          const response = await fetch(`${PHP_KPI_BASE_URL}/dashboard.php${params ? '?' + params : ''}`, {
+            method: 'GET',
+            headers: getKPIHeaders()
+          });
+          if (response.ok) return { data: await response.json() };
+        } catch {}
       }
+      const cached = localStorage.getItem('cached_kpi_dashboard');
+      if (cached) return { data: JSON.parse(cached) };
+      throw err;
     }
   },
 
   // CRUD for KPI definitions
   listDefinitions: async () => {
     try {
-      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php`, {
-        headers: getKPIHeaders()
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      localStorage.setItem('cached_kpi_definitions', JSON.stringify(data));
-      return { data: data.data || [] };
+      const res = await api.get('/kpi/definitions');
+      localStorage.setItem('cached_kpi_definitions', JSON.stringify(res.data));
+      return { data: res.data || [] };
     } catch (err) {
-      console.warn("KPI definitions fetch offline, using fallback:", err);
-      try {
-        const res = await api.get('/kpi/definitions');
-        return { data: res.data || [] };
-      } catch {
-        const cached = localStorage.getItem('cached_kpi_definitions');
-        return { data: cached ? (JSON.parse(cached).data || []) : [] };
-      }
+      const cached = localStorage.getItem('cached_kpi_definitions');
+      if (cached) return { data: JSON.parse(cached) };
+      throw err;
     }
   },
 
   createDefinition: async (kpiData) => {
     try {
-      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php`, {
-        method: 'POST',
-        headers: getKPIHeaders(),
-        body: JSON.stringify(kpiData)
-      });
-      const responseText = await response.text();
-      let resData;
-      try {
-        resData = JSON.parse(responseText);
-      } catch {
-        throw new Error(`Server response invalid: ${responseText.slice(0, 100)}`);
-      }
-      if (!response.ok || resData.error || resData.status === 'error') {
-        const msg = resData.message || resData.error || `HTTP ${response.status}`;
-        const errorObj = new Error(msg);
-        errorObj.response = { data: { detail: msg } };
-        throw errorObj;
-      }
-      return { data: resData };
+      const res = await api.post('/kpi/definitions', kpiData);
+      return { data: res.data };
     } catch (err) {
-      console.error("Failed to create KPI definition on PHP server, trying FastAPI fallback:", err);
-      try {
-        const res = await api.post('/kpi/definitions', kpiData);
-        return { data: res.data };
-      } catch (fallbackErr) {
-        if (!err.response) {
-          err.response = { data: { detail: err.message || "Failed to create KPI definition." } };
-        }
-        throw err;
+      if (import.meta.env.VITE_USE_PHP_KPI === 'true') {
+        const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php`, {
+          method: 'POST',
+          headers: getKPIHeaders(),
+          body: JSON.stringify(kpiData)
+        });
+        if (response.ok) return { data: await response.json() };
       }
+      throw err;
     }
   },
 
   updateDefinition: async (id, kpiData) => {
     try {
-      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php?id=${id}`, {
-        method: 'PUT',
-        headers: getKPIHeaders(),
-        body: JSON.stringify(kpiData)
-      });
-      const responseText = await response.text();
-      let resData;
-      try {
-        resData = JSON.parse(responseText);
-      } catch {
-        throw new Error(`Server response invalid: ${responseText.slice(0, 100)}`);
-      }
-      if (!response.ok || resData.error || resData.status === 'error') {
-        const msg = resData.message || resData.error || `HTTP ${response.status}`;
-        const errorObj = new Error(msg);
-        errorObj.response = { data: { detail: msg } };
-        throw errorObj;
-      }
-      return { data: resData };
+      const res = await api.put(`/kpi/definitions/${id}`, kpiData);
+      return { data: res.data };
     } catch (err) {
-      console.error("Failed to update KPI definition on PHP server:", err);
-      try {
-        const res = await api.put(`/kpi/definitions/${id}`, kpiData);
-        return { data: res.data };
-      } catch (fallbackErr) {
-        if (!err.response) {
-          err.response = { data: { detail: err.message || "Failed to update KPI definition." } };
-        }
-        throw err;
+      if (import.meta.env.VITE_USE_PHP_KPI === 'true') {
+        const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php?id=${id}`, {
+          method: 'PUT',
+          headers: getKPIHeaders(),
+          body: JSON.stringify(kpiData)
+        });
+        if (response.ok) return { data: await response.json() };
       }
+      throw err;
     }
   },
 
   deleteDefinition: async (id) => {
     try {
-      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php?id=${id}`, {
-        method: 'DELETE',
-        headers: getKPIHeaders()
-      });
-      const resData = await response.json().catch(() => ({}));
-      if (!response.ok || resData.error) {
-        const msg = resData.message || resData.error || `HTTP ${response.status}`;
-        const errorObj = new Error(msg);
-        errorObj.response = { data: { detail: msg } };
-        throw errorObj;
-      }
-      return { data: resData };
+      const res = await api.delete(`/kpi/definitions/${id}`);
+      return { data: res.data };
     } catch (err) {
-      console.error("Failed to delete KPI definition:", err);
-      try {
-        const res = await api.delete(`/kpi/definitions/${id}`);
-        return { data: res.data };
-      } catch (fallbackErr) {
-        throw err;
+      if (import.meta.env.VITE_USE_PHP_KPI === 'true') {
+        const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php?id=${id}`, {
+          method: 'DELETE',
+          headers: getKPIHeaders()
+        });
+        if (response.ok) return { data: await response.json() };
       }
+      throw err;
     }
   },
 
   // Built-in KPI templates
   getBuiltInTemplates: async () => {
-    return {
-      data: [
-        { key: 'revenue_growth', name: 'Revenue Growth Rate', unit: '%', category: 'financial', description: 'Month-over-month revenue growth' },
-        { key: 'customer_churn', name: 'Customer Churn Rate', unit: '%', category: 'operational', description: 'Percentage of lost customers' },
-        { key: 'active_users', name: 'Monthly Active Users', unit: 'users', category: 'operational', description: 'Active user count per month' },
-        { key: 'profit_margin', name: 'Net Profit Margin', unit: '%', category: 'financial', description: 'Net profit percentage of total revenue' }
-      ]
-    };
+    try {
+      const res = await api.get('/kpi/definitions/built-in');
+      return { data: res.data };
+    } catch (err) {
+      return {
+        data: [
+          { key: 'revenue_growth', name: 'Revenue Growth Rate', unit: '%', category: 'financial', description: 'Month-over-month revenue growth' },
+          { key: 'customer_churn', name: 'Customer Churn Rate', unit: '%', category: 'operational', description: 'Percentage of lost customers' },
+          { key: 'active_users', name: 'Monthly Active Users', unit: 'users', category: 'operational', description: 'Active user count per month' },
+          { key: 'profit_margin', name: 'Net Profit Margin', unit: '%', category: 'financial', description: 'Net profit percentage of total revenue' }
+        ]
+      };
+    }
   },
 
-  // Computation
+  // Computation — Trigger calculation on backend database
   computeAll: async () => {
     try {
-      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_compute.php`, {
-        method: 'POST',
-        headers: getKPIHeaders()
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      if (data.error || data.status === 'error') throw new Error(data.message || data.error);
-      return { data };
+      const res = await api.post('/kpi/compute');
+      return { data: res.data };
     } catch (err) {
-      console.warn("PHP KPI compute failed or offline. Trying FastAPI fallback:", err);
-      try {
-        const res = await api.post('/kpi/compute');
-        return { data: res.data };
-      } catch (fallbackErr) {
-        console.error("FastAPI KPI compute failed:", fallbackErr);
-        throw fallbackErr.response?.data?.detail ? fallbackErr : err;
+      if (import.meta.env.VITE_USE_PHP_KPI === 'true') {
+        try {
+          const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_compute.php`, {
+            method: 'POST',
+            headers: getKPIHeaders()
+          });
+          if (response.ok) return { data: await response.json() };
+        } catch {}
       }
+      throw err;
     }
   },
 
   // History
   getHistory: async (id, limit = 12) => {
     try {
-      const response = await fetch(`${PHP_KPI_BASE_URL}/dashboard.php?kpi_id=${id}&limit=${limit}`, {
-        headers: getKPIHeaders()
-      });
-      const data = await response.json();
-      return { data };
+      const res = await api.get(`/kpi/${id}/history`, { params: { limit } });
+      return { data: res.data };
     } catch (err) {
+      if (import.meta.env.VITE_USE_PHP_KPI === 'true') {
+        try {
+          const response = await fetch(`${PHP_KPI_BASE_URL}/dashboard.php?kpi_id=${id}&limit=${limit}`, {
+            headers: getKPIHeaders()
+          });
+          if (response.ok) return { data: await response.json() };
+        } catch {}
+      }
       return { data: [] };
     }
   },
@@ -481,14 +429,17 @@ export const kpiService = {
   // Promote formula to KPI
   promoteFormula: async (formulaId, params = {}) => {
     try {
-      const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php`, {
-        method: 'POST',
-        headers: getKPIHeaders(),
-        body: JSON.stringify({ formula_id: formulaId, ...params })
-      });
-      return { data: await response.json() };
+      const res = await api.post(`/kpi/from-formula/${formulaId}`, null, { params });
+      return { data: res.data };
     } catch (err) {
-      console.error("Failed to promote formula to KPI:", err);
+      if (import.meta.env.VITE_USE_PHP_KPI === 'true') {
+        const response = await fetch(`${PHP_KPI_BASE_URL}/kpi_definitions.php`, {
+          method: 'POST',
+          headers: getKPIHeaders(),
+          body: JSON.stringify({ formula_id: formulaId, ...params })
+        });
+        if (response.ok) return { data: await response.json() };
+      }
       throw err;
     }
   },

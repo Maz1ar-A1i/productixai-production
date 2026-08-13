@@ -291,6 +291,31 @@ const Visuals = () => {
       .catch(() => {});
   }, []);
 
+  // Date filter matcher — handles YYYY-MM-DD, YYYY-MM, and ISO timestamps
+  const isDateInRange = useCallback((rawDate, start, end) => {
+    if (!rawDate) return true;
+    const dStr = String(rawDate).trim();
+    if (!dStr || dStr === "unknown") return true;
+
+    const match = dStr.match(/^(\d{4}-\d{2})(?:-(\d{2}))?/);
+    if (!match) return true;
+
+    const recMonth = match[1]; // e.g. "2026-08"
+    const recFull = match[2] ? `${recMonth}-${match[2]}` : null; // e.g. "2026-08-12"
+
+    if (start) {
+      const startMonth = start.slice(0, 7);
+      if (recMonth < startMonth) return false;
+      if (recFull && recFull < start) return false;
+    }
+    if (end) {
+      const endMonth = end.slice(0, 7);
+      if (recMonth > endMonth) return false;
+      if (recFull && recFull > end) return false;
+    }
+    return true;
+  }, []);
+
   // Fetch records
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -308,11 +333,6 @@ const Visuals = () => {
       const res = await api.get("/data-records/", { params });
       const data = res.data || [];
       setRecords(data);
-
-      if (data.length > 0 && selectedMetrics.length === 0) {
-        const numeric = getNumericKeys(data);
-        setSelectedMetrics(numeric.slice(0, 3));
-      }
     } catch (err) {
       setError("Failed to load data records. Please verify your connection.");
     } finally {
@@ -322,30 +342,69 @@ const Visuals = () => {
 
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
-  // Derive numeric field keys
+  // Derive active unit's defined variable keys
+  const activeUnitDefinedKeys = useMemo(() => {
+    const defined = new Set();
+    const targetUnits = selectedUnitId !== "all"
+      ? units.filter(u => String(u.id) === String(selectedUnitId))
+      : units;
+
+    targetUnits.forEach(u => {
+      (u.unit_vars || []).forEach(v => defined.add(typeof v === 'object' ? (v.key || v.name) : v));
+      (u.customer_vars || []).forEach(v => defined.add(typeof v === 'object' ? (v.key || v.name) : v));
+      (u.input_fields || []).forEach(v => defined.add(v));
+      (u.output_fields || []).forEach(v => defined.add(v));
+    });
+    return defined;
+  }, [units, selectedUnitId]);
+
+  // Derive numeric field keys — strictly filtered to valid unit variables
   const numericKeys = useMemo(() => {
     if (!records.length) return [];
-    return getNumericKeys(records);
-  }, [records]);
+    const extracted = getNumericKeys(records);
+    if (activeUnitDefinedKeys.size > 0) {
+      // Prioritize keys defined in the unit schema, followed by computed metrics
+      const matched = extracted.filter(k => activeUnitDefinedKeys.has(k) || activeUnitDefinedKeys.has(k.replace(/_/g, " ")) || activeUnitDefinedKeys.has(k.replace(/\s+/g, "_")));
+      if (matched.length > 0) return matched;
+    }
+    // Fallback: exclude legacy seed keys if not defined
+    const legacySeed = new Set(["fuel cost", "fuel_cost", "diesel cost", "diesel_cost", "grid_kwh", "generator_hours"]);
+    const cleaned = extracted.filter(k => !legacySeed.has(k.toLowerCase()));
+    return cleaned.length > 0 ? cleaned : extracted;
+  }, [records, activeUnitDefinedKeys]);
 
-  // Aggregate records by date with period filtering
+  // Sync selected metrics when numericKeys change
+  useEffect(() => {
+    if (numericKeys.length > 0) {
+      setSelectedMetrics(prev => {
+        const validPrev = prev.filter(m => numericKeys.includes(m));
+        if (validPrev.length > 0) return validPrev;
+        return numericKeys.slice(0, 3);
+      });
+    } else {
+      setSelectedMetrics([]);
+    }
+  }, [numericKeys]);
+
+  // Aggregate records by date with accurate period matching
   const chartData = useMemo(() => {
     if (!records.length) return [];
     const byDate = {};
     records.forEach(r => {
       const d = r.date || r.record_date || r.month || r.data?.parameters?.date || r.created_at?.slice(0, 10) || "unknown";
-      if (dateRange.start && d !== "unknown" && d < dateRange.start) return;
-      if (dateRange.end && d !== "unknown" && d > dateRange.end) return;
-      if (!byDate[d]) byDate[d] = { date: d, _count: 0 };
-      byDate[d]._count++;
+      if (!isDateInRange(d, dateRange.start, dateRange.end)) return;
+      
+      const normDate = d.length === 7 ? `${d}-01` : d;
+      if (!byDate[normDate]) byDate[normDate] = { date: normDate, _count: 0 };
+      byDate[normDate]._count++;
       const flat = flattenRecordMetrics(r);
       numericKeys.forEach(k => {
         const val = flat[k];
-        if (val !== undefined) byDate[d][k] = (byDate[d][k] || 0) + val;
+        if (val !== undefined) byDate[normDate][k] = (byDate[normDate][k] || 0) + val;
       });
     });
     return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-  }, [records, numericKeys, dateRange]);
+  }, [records, numericKeys, dateRange, isDateInRange]);
 
   // Prediction data with confidence ribbons
   const predData = useMemo(() => {
