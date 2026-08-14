@@ -131,9 +131,24 @@ def master_restore(
         
         db.commit()
         write_audit_log(client_ip, "MASTER_RESTORE", "SUCCESS")
-        return {"status": "success", "message": "Global system registry activated successfully."}
-        
+@router.post("/reset-database", include_in_schema=False)
+def reset_database(
+    request: Request,
+    _ = Depends(enforce_security)
+):
+    """
+    Developer-only Nuclear Database Reset.
+    Drops all tables and recreates clean, empty tables.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    from ..database import engine, Base
+    from .. import models
+    
+    try:
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        write_audit_log(client_ip, "RESET_DATABASE", "SUCCESS")
+        return {"status": "success", "message": "Database completely wiped and clean tables recreated."}
     except Exception as e:
-        db.rollback()
-        write_audit_log(client_ip, "MASTER_RESTORE", f"ERROR (DB Transaction Failed: {str(e)})")
-        raise HTTPException(status_code=404, detail="Not Found")
+        write_audit_log(client_ip, "RESET_DATABASE", f"ERROR (Reset Failed: {str(e)})")
+        raise HTTPException(status_code=500, detail=f"Database reset error: {str(e)}")

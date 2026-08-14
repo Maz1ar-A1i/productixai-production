@@ -136,6 +136,7 @@ async def enforce_client_licensing(request, call_next):
             "/license/validate",
             "/api/internal/master-kill",
             "/api/internal/master-restore",
+            "/api/internal/reset-database",
             "/openapi.json",
             "/docs",
             "/redoc",
