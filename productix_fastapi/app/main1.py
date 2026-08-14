@@ -177,38 +177,33 @@ async def enforce_client_licensing(request, call_next):
                 from .database import SessionLocal
                 from .models import License
                 from datetime import datetime
-                
-                # ── Cloud / Railway mode detection ─────────────────────────────
-                # On cloud deployments (Railway, Heroku, etc.) the server is
-                # stateless — there is no local machine-bound license cache file.
-                # In this mode we skip the encrypted cache lookup entirely and
-                # only validate that an active license exists in the database
-                # for the organisation.  Set PRODUCTIX_CLOUD_MODE=true in Railway
-                # env vars, OR the middleware auto-detects cloud mode when no
-                # cache file is present on the filesystem.
-                cloud_mode = os.getenv("PRODUCTIX_CLOUD_MODE", "false").lower() == "true"
 
+                # ── Cloud vs Desktop mode detection ───────────────────────────
+                # Strategy: the most reliable signal is the LOCAL CACHE FILE.
+                # A genuine desktop installation always has this file after the
+                # first license activation.  A cloud/Railway server NEVER has it
+                # (stateless filesystem).  So:
+                #   • Cache file EXISTS  → desktop mode (enforce machine-binding)
+                #   • Cache file MISSING → cloud mode   (only block REVOKED/EXPIRED)
+                # You can also force cloud mode explicitly with PRODUCTIX_CLOUD_MODE=true.
+                cloud_mode = os.getenv("PRODUCTIX_CLOUD_MODE", "false").lower() == "true"
                 cached_key = None
-                if not cloud_mode:
-                    # Auto-detect common cloud host signals before reading cache
-                    is_likely_cloud = (
-                        os.getenv("RAILWAY_ENVIRONMENT") is not None or
-                        os.getenv("RAILWAY_SERVICE_ID") is not None or
-                        os.getenv("RAILWAY_PROJECT_ID") is not None or
-                        os.getenv("RENDER") is not None or
-                        os.getenv("DYNO") is not None or   # Heroku
-                        os.getenv("K_SERVICE") is not None  # Google Cloud Run
-                    )
-                    if is_likely_cloud:
-                        cloud_mode = True
 
                 if not cloud_mode:
                     try:
-                        from .client_license_manager import read_encrypted_cache
-                        cache = read_encrypted_cache()
-                        cached_key = cache.get("license_key") if cache else None
+                        from .client_license_manager import read_encrypted_cache, get_cache_file_path
+                        cache_path = get_cache_file_path()
+                        if cache_path.exists():
+                            # Cache file is present → desktop installation
+                            cache = read_encrypted_cache()
+                            cached_key = cache.get("license_key") if cache else None
+                        else:
+                            # NO cache file → this is a cloud/stateless server
+                            cloud_mode = True
                     except Exception:
-                        pass
+                        # If we can't even import or read the cache manager,
+                        # we're almost certainly on a cloud server → cloud mode
+                        cloud_mode = True
                 
                 db = SessionLocal()
                 try:
