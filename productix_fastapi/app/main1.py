@@ -176,12 +176,39 @@ async def enforce_client_licensing(request, call_next):
             if not is_system_admin:
                 from .database import SessionLocal
                 from .models import License
-                from .client_license_manager import read_encrypted_cache
                 from datetime import datetime
                 
-                # Get cached license key
-                cache = read_encrypted_cache()
-                cached_key = cache.get("license_key") if cache else None
+                # ── Cloud / Railway mode detection ─────────────────────────────
+                # On cloud deployments (Railway, Heroku, etc.) the server is
+                # stateless — there is no local machine-bound license cache file.
+                # In this mode we skip the encrypted cache lookup entirely and
+                # only validate that an active license exists in the database
+                # for the organisation.  Set PRODUCTIX_CLOUD_MODE=true in Railway
+                # env vars, OR the middleware auto-detects cloud mode when no
+                # cache file is present on the filesystem.
+                cloud_mode = os.getenv("PRODUCTIX_CLOUD_MODE", "false").lower() == "true"
+
+                cached_key = None
+                if not cloud_mode:
+                    # Auto-detect common cloud host signals before reading cache
+                    is_likely_cloud = (
+                        os.getenv("RAILWAY_ENVIRONMENT") is not None or
+                        os.getenv("RAILWAY_SERVICE_ID") is not None or
+                        os.getenv("RAILWAY_PROJECT_ID") is not None or
+                        os.getenv("RENDER") is not None or
+                        os.getenv("DYNO") is not None or   # Heroku
+                        os.getenv("K_SERVICE") is not None  # Google Cloud Run
+                    )
+                    if is_likely_cloud:
+                        cloud_mode = True
+
+                if not cloud_mode:
+                    try:
+                        from .client_license_manager import read_encrypted_cache
+                        cache = read_encrypted_cache()
+                        cached_key = cache.get("license_key") if cache else None
+                    except Exception:
+                        pass
                 
                 db = SessionLocal()
                 try:
@@ -200,17 +227,20 @@ async def enforce_client_licensing(request, call_next):
                         # If no cache exists (e.g. fresh cloud deployment), fall back to any
                         # active license for this org so the user can reach the LockScreen
                         # and register their key, which will then bind it to the server machine.
-                        if cached_key:
+                        if cloud_mode or not cached_key:
+                            # ── Cloud mode: only check DB for any active org license.
+                            # We do NOT enforce machine-binding here because this is a
+                            # shared cloud server, not the licensed client workstation.
                             lic = db.query(License).filter(
                                 License.organization_id == user_org_id,
-                                License.license_key == cached_key,
                                 License.status == "active"
                             ).first()
                         else:
-                            # No local cache — allow any active org license through so the
-                            # user can log in and register (bind) their key via the LockScreen.
+                            # ── Local / desktop mode: match against the machine-bound
+                            # cached license key for strict binding.
                             lic = db.query(License).filter(
                                 License.organization_id == user_org_id,
+                                License.license_key == cached_key,
                                 License.status == "active"
                             ).first()
                         

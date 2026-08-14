@@ -281,31 +281,48 @@ const UnitDataEntry = () => {
     buildContext(cols, updatedRow);
 
     // Helper: find the column that is the target of a formula.
+    // Tries exact match first, then case-insensitive fallback so that
+    // formulas saved with slightly different casing still find their column.
     const findTargetCol = (colList, formulaName, targetColName) => {
+      const looksLike = (colLabel, colKey, searchName) => {
+        if (!searchName) return false;
+        const origKey = colKey.replace(/^unit_|^customer_/, "");
+        const sLower = searchName.toLowerCase();
+        return (
+          colLabel === searchName ||
+          origKey === searchName ||
+          colLabel.toLowerCase() === sLower ||
+          origKey.toLowerCase() === sLower
+        );
+      };
       if (targetColName) {
-        const byTarget = colList.find(c => {
-          if (c.label === targetColName) return true;
-          const originalName = c.key.replace(/^unit_|^customer_/, "");
-          return originalName === targetColName;
-        });
+        const byTarget = colList.find(c => looksLike(c.label, c.key, targetColName));
         if (byTarget) return byTarget;
       }
-      return colList.find(c => {
-        if (c.label === formulaName) return true;
-        const originalName = c.key.replace(/^unit_|^customer_/, "");
-        return originalName === formulaName;
-      });
+      return colList.find(c => looksLike(c.label, c.key, formulaName)) || null;
     };
 
     // Helper: resolve a variable from the context, or look up unit-level data for customer rows.
+    // Tries the clean variable name, its lowercase, and the column's original key name (without prefix).
     const resolveVar = (v, rowData, rowType) => {
       const cleanV = v.replace(/\s*\(Revenue\)|\s*\(Customer\)/i, "");
+      // Try exact match in context
       if (context[cleanV] !== undefined) return context[cleanV];
+      // Try case-insensitive context lookup
+      const lowerV = cleanV.toLowerCase();
+      const ctxKey = Object.keys(context).find(k => k.toLowerCase() === lowerV);
+      if (ctxKey !== undefined) return context[ctxKey];
+      // For customer-row formulas, look up matching value from the corresponding unit row
       if (rowType === "customer" && rowData.Date) {
         const unitRow = uRows.find(ur => ur.Date === rowData.Date);
         if (unitRow) {
-          const uCol = uCols.find(uc => uc.label === cleanV || uc.key.replace(/^unit_/, "") === cleanV);
-          if (uCol) return Number(unitRow[uCol.key] || 0);
+          const uCol = uCols.find(uc =>
+            uc.label === cleanV ||
+            uc.key.replace(/^unit_/, "") === cleanV ||
+            uc.label.toLowerCase() === lowerV ||
+            uc.key.replace(/^unit_/, "").toLowerCase() === lowerV
+          );
+          if (uCol) return sanitizeNumber(unitRow[uCol.key]);
         }
       }
       return undefined;
@@ -373,11 +390,13 @@ const UnitDataEntry = () => {
       .catch(err => console.error("Failed to load formulas", err));
   }, [userRole]);
 
-  // ── Re-run formula calculations whenever formulas finish loading ──────────────
-  // Fixes the race condition where formulas arrive after data is already rendered,
-  // leaving all formula-target columns blank.
+  // ── Re-run formula calculations whenever formulas OR unit columns change ───────
+  // Fixes two race conditions:
+  //   1. Formulas arrive AFTER data is already rendered (columns were ready but formulas were empty).
+  //   2. Unit columns are built AFTER formulas are already loaded (formulas ready but no columns yet).
+  // By depending on both `formulas` and `unitColumns` (and gating on selectedUnitId), we cover both.
   useEffect(() => {
-    if (formulas.length === 0 || unitColumns.length === 0) return;
+    if (formulas.length === 0 || unitColumns.length === 0 || !selectedUnitId) return;
     setUnitRows(prev => {
       if (prev.length === 0) return prev;
       // Only recalculate if there is actual data (skip empty placeholder rows)
@@ -397,7 +416,7 @@ const UnitDataEntry = () => {
       });
       return recalculated;
     });
-  }, [formulas]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [formulas, unitColumns, selectedUnitId]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -1132,10 +1151,21 @@ const UnitDataEntry = () => {
                         <td className="p-2 text-center text-xs text-white/20 font-mono">{rIndex + 1}</td>
                         {unitColumns.map(c => {
                           const colOrigName = c.key.replace(/^unit_|^customer_/, "");
-                          const isCalc = formulas.some(f =>
-                            (f.target_column && (f.target_column === colOrigName || f.target_column === c.label)) ||
-                            (!f.target_column && (f.formula_name === c.label || f.formula_name === colOrigName))
-                          );
+                          const colOrigLower = colOrigName.toLowerCase();
+                          const colLabelLower = c.label.toLowerCase();
+                          // Match by target_column (primary) or formula_name (fallback).
+                          // Case-insensitive comparison catches capitalization mismatches between
+                          // the FormulaBuilder canonical names and the unit's variable names.
+                          const isCalc = formulas.some(f => {
+                            const target = (f.target_column || f.formula_name || "");
+                            const targetLower = target.toLowerCase();
+                            return (
+                              target === colOrigName ||
+                              target === c.label ||
+                              targetLower === colOrigLower ||
+                              targetLower === colLabelLower
+                            );
+                          });
                           return (
                             <td key={c.key} className={`p-1 min-w-[150px] ${isCalc ? 'bg-teal-500/5' : ''}`}>
                               <input
@@ -1220,10 +1250,18 @@ const UnitDataEntry = () => {
                           <td className="p-2 text-center text-xs text-white/20 font-mono">{rIndex + 1}</td>
                           {customerColumns.map(c => {
                             const colOrigName = c.key.replace(/^unit_|^customer_/, "");
-                            const isCalc = formulas.some(f =>
-                              (f.target_column && (f.target_column === colOrigName || f.target_column === c.label)) ||
-                              (!f.target_column && (f.formula_name === c.label || f.formula_name === colOrigName))
-                            );
+                            const colOrigLower = colOrigName.toLowerCase();
+                            const colLabelLower = c.label.toLowerCase();
+                            const isCalc = formulas.some(f => {
+                              const target = (f.target_column || f.formula_name || "");
+                              const targetLower = target.toLowerCase();
+                              return (
+                                target === colOrigName ||
+                                target === c.label ||
+                                targetLower === colOrigLower ||
+                                targetLower === colLabelLower
+                              );
+                            });
                             return (
                               <td key={c.key} className={`p-1 min-w-[150px] ${isCalc ? 'bg-amber-500/5' : ''}`}>
                                   {c.type === "dropdown" ? (
