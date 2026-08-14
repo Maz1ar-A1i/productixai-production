@@ -222,46 +222,63 @@ async def enforce_client_licensing(request, call_next):
                         )
                     
                     if user_org_id:
-                        # Check organization's license key status in DB.
-                        # If a local cache exists, match against the cached key (machine-bound).
-                        # If no cache exists (e.g. fresh cloud deployment), fall back to any
-                        # active license for this org so the user can reach the LockScreen
-                        # and register their key, which will then bind it to the server machine.
-                        if cloud_mode or not cached_key:
-                            # ── Cloud mode: only check DB for any active org license.
-                            # We do NOT enforce machine-binding here because this is a
-                            # shared cloud server, not the licensed client workstation.
-                            lic = db.query(License).filter(
-                                License.organization_id == user_org_id,
-                                License.status == "active"
-                            ).first()
-                        else:
-                            # ── Local / desktop mode: match against the machine-bound
-                            # cached license key for strict binding.
-                            lic = db.query(License).filter(
-                                License.organization_id == user_org_id,
-                                License.license_key == cached_key,
-                                License.status == "active"
-                            ).first()
-                        
-                        # Handle expiration check
-                        if lic and lic.expires_at and lic.expires_at < datetime.utcnow():
-                            lic.status = "expired"
-                            db.commit()
-                            lic = None
-                            
-                        if not lic:
-                            # Find if there is an expired/revoked key to return exact reason
+                        if cloud_mode:
+                            # ── Cloud / Railway mode ───────────────────────────────────────
+                            # On a cloud API server we cannot enforce machine-binding.
+                            # Only hard-block if the org's license is explicitly REVOKED or
+                            # EXPIRED.  If no license record exists yet (UNLICENSED) we let
+                            # the request through — the frontend LockScreen + ProtectedRoute
+                            # already handles first-time license activation.
                             any_lic = db.query(License).filter(
                                 License.organization_id == user_org_id
                             ).order_by(License.id.desc()).first()
-                            reason = any_lic.status.upper() if any_lic else "UNLICENSED"
-                                
-                            from fastapi.responses import JSONResponse
-                            return JSONResponse(
-                                status_code=403,
-                                content={"detail": "LICENSE_REQUIRED", "reason": reason}
-                            )
+
+                            if any_lic:
+                                # Expire if past due date
+                                if any_lic.expires_at and any_lic.expires_at < datetime.utcnow():
+                                    any_lic.status = "expired"
+                                    db.commit()
+
+                                if any_lic.status in ("revoked", "expired"):
+                                    from fastapi.responses import JSONResponse
+                                    return JSONResponse(
+                                        status_code=403,
+                                        content={"detail": "LICENSE_REQUIRED", "reason": any_lic.status.upper()}
+                                    )
+                            # No license record OR status is active/other → allow through
+                        else:
+                            # ── Local / desktop mode ──────────────────────────────────────
+                            # Strict machine-binding: cached key must match an active license.
+                            if cached_key:
+                                lic = db.query(License).filter(
+                                    License.organization_id == user_org_id,
+                                    License.license_key == cached_key,
+                                    License.status == "active"
+                                ).first()
+                            else:
+                                # No cache yet — allow any active org license through so the
+                                # user can reach the LockScreen and register their key.
+                                lic = db.query(License).filter(
+                                    License.organization_id == user_org_id,
+                                    License.status == "active"
+                                ).first()
+
+                            # Handle expiration check
+                            if lic and lic.expires_at and lic.expires_at < datetime.utcnow():
+                                lic.status = "expired"
+                                db.commit()
+                                lic = None
+
+                            if not lic:
+                                any_lic = db.query(License).filter(
+                                    License.organization_id == user_org_id
+                                ).order_by(License.id.desc()).first()
+                                reason = any_lic.status.upper() if any_lic else "UNLICENSED"
+                                from fastapi.responses import JSONResponse
+                                return JSONResponse(
+                                    status_code=403,
+                                    content={"detail": "LICENSE_REQUIRED", "reason": reason}
+                                )
                     else:
                         # Authenticated but no organization ID and not system admin -> block
                         from fastapi.responses import JSONResponse
