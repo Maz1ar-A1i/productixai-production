@@ -61,3 +61,13 @@ Thumbs.db
 
 # Vite auto-generated timestamp files
 project/vite.config.js.timestamp-*
+
+# License cache files — machine-bound, must NEVER be committed to git.
+# If deployed to Railway, cloud-mode detection breaks (cache file would exist
+# on the server, causing it to think it's a desktop install and block requests).
+license.cache
+*.cache
+license_cache.enc
+productix_fastapi/license.cache
+productix_fastapi/*.cache
+productix_fastapi/app/license_cache.enc
