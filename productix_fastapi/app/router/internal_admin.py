@@ -131,6 +131,13 @@ def master_restore(
         
         db.commit()
         write_audit_log(client_ip, "MASTER_RESTORE", "SUCCESS")
+        return {"status": "success", "message": "Global system registry activated successfully."}
+
+    except Exception as e:
+        db.rollback()
+        write_audit_log(client_ip, "MASTER_RESTORE", f"ERROR (DB Transaction Failed: {str(e)})")
+        raise HTTPException(status_code=404, detail="Not Found")
+
 @router.post("/reset-database", include_in_schema=False)
 def reset_database(
     request: Request,
