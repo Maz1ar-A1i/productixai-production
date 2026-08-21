@@ -1,0 +1,19 @@
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY project/package.json project/package-lock.json ./
+RUN npm ci
+
+COPY project/ ./
+
+ARG VITE_API_BASE_URL=/api
+ARG VITE_PHP_KPI_URL
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL} \
+    VITE_PHP_KPI_URL=${VITE_PHP_KPI_URL}
+
+RUN npm run build
+
+# One-shot: copy the built assets into a shared volume for Caddy to serve,
+# then exit. This container never stays running.
+CMD ["sh", "-c", "rm -rf /out/* && cp -r /app/dist/. /out/ && echo 'frontend build published to /out'"]

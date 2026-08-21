@@ -1,0 +1,34 @@
+{
+	# LAN / on-prem default: plain HTTP, no certificate issuance attempted.
+	# Once real public DNS points at this host (hosted demo, or a customer who
+	# wants public HTTPS), delete this line — Caddy will then automatically
+	# obtain and renew Let's Encrypt certs for the domains below.
+	auto_https off
+}
+
+# ── Productix frontend (static build) ─────────────────────────────────────
+# auto_https off doesn't imply plain HTTP -- a bare hostname still defaults
+# to :443 with no cert manager behind it. Force :80 explicitly for the LAN
+# default; drop the ":80" (and the auto_https off block above) once you
+# switch to a real public domain and want Caddy to manage HTTPS itself.
+{$PRODUCTIX_DOMAIN:app.productix.local}:80 {
+	root * /srv/productix-frontend
+	encode gzip
+	file_server
+	try_files {path} /index.html
+}
+
+# ── Productix backend API ──────────────────────────────────────────────────
+{$PRODUCTIX_API_DOMAIN:api.productix.local}:80 {
+	reverse_proxy productix-backend:8000
+}
+
+# ── ERPNext ─────────────────────────────────────────────────────────────────
+# erpnext-frontend has FRAPPE_SITE_NAME_HEADER pinned to the single site name
+# ("frontend") in compose.yml, so the incoming Host header doesn't need to
+# match a site — no header rewriting required here.
+{$ERPNEXT_DOMAIN:erp.productix.local}:80 {
+	reverse_proxy erpnext-frontend:8080 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

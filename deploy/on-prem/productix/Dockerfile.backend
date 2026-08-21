@@ -1,0 +1,34 @@
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /srv
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential libpq-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# This build environment has broken outbound IPv6 (SYNs are silently dropped
+# instead of refused), so pip burns its full timeout on IPv6 before falling
+# back to IPv4 on every package. Bias getaddrinfo() toward IPv4 first.
+RUN echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf
+
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir --default-timeout=180 --retries 10 -r requirements.txt
+
+COPY productix_fastapi ./productix_fastapi
+
+RUN useradd --create-home --uid 1000 productix \
+    && chown -R productix:productix /srv
+USER productix
+
+WORKDIR /srv/productix_fastapi
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+    CMD curl -fsS http://localhost:8000/docs -o /dev/null || exit 1
+
+CMD ["python", "-m", "uvicorn", "app.main1:app", "--host", "0.0.0.0", "--port", "8000"]
