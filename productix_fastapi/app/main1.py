@@ -368,3 +368,7 @@ app.include_router(telco_router.router,  prefix="/api")
 app.include_router(retail_router.router, prefix="/api")
 app.include_router(auto_router.router,   prefix="/api")
 app.include_router(formulas_router.router, prefix="/api")
+
+# ── ERPNext integration (read-only, allowlisted) ──────────────────────────────
+from .router import erpnext as erpnext_router
+app.include_router(erpnext_router.router)
